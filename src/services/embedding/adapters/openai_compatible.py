@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """OpenAI-compatible embedding adapter for OpenAI, Azure, HuggingFace, LM Studio, etc."""
 
+import json
 import logging
 from typing import Any, Dict
 
@@ -31,6 +32,24 @@ class OpenAICompatibleEmbeddingAdapter(BaseEmbeddingAdapter):
         """
         if not isinstance(data, dict):
             raise ValueError(f"Embedding response is not a JSON object: type={type(data).__name__}")
+
+        # Some providers return HTTP 200 with {"error": ...} payload.
+        if "error" in data:
+            err = data.get("error")
+            if isinstance(err, dict):
+                msg = (
+                    err.get("message")
+                    or err.get("msg")
+                    or err.get("detail")
+                    or json.dumps(err, ensure_ascii=False)
+                )
+                code = err.get("code")
+                etype = err.get("type")
+                raise ValueError(
+                    f"Embedding provider returned error payload: "
+                    f"message={msg}, code={code}, type={etype}"
+                )
+            raise ValueError(f"Embedding provider returned error payload: {err}")
 
         candidates = []
         # Standard OpenAI schema
