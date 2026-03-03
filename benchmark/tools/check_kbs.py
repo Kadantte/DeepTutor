@@ -315,7 +315,7 @@ async def main():
         help="Path to knowledge_bases directory (default: data/knowledge_bases)",
     )
     parser.add_argument(
-        "--skip-rag-test",
+        "--no-rag",
         action="store_true",
         help="Skip live RAG query test (only run static checks).",
     )
@@ -391,7 +391,7 @@ async def main():
 
     # --- Phase 2: Live RAG tests (all KBs, parallel) ---
     all_kb_names = [d.name for d in kb_dirs]
-    if args.skip_rag_test or not all_kb_names:
+    if args.no_rag or not all_kb_names:
         _print_final_summary(groups, rag_results=None)
         sys.exit(1 if groups["error"] else 0)
 
