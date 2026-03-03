@@ -367,39 +367,36 @@ async def main():
         f"{ANSI_RED}{len(groups['error'])} ERROR{ANSI_RESET}"
     )
 
-    # --- Phase 2: Live RAG tests ---
-    candidates = groups["ok"] + groups["warn"]
-    if args.skip_rag_test or not candidates:
-        if not candidates:
-            print(f"\n{ANSI_DIM}No candidates for RAG test (all ERROR).{ANSI_RESET}")
-        # Print final lists
+    # --- Phase 2: Live RAG tests (all KBs, parallel) ---
+    all_kb_names = [d.name for d in kb_dirs]
+    if args.skip_rag_test or not all_kb_names:
         _print_final_summary(groups, rag_results=None)
         sys.exit(1 if groups["error"] else 0)
 
     logging.disable(logging.CRITICAL)
 
     print(f"\n{'=' * 60}")
-    print(f"{ANSI_BOLD}Phase 2: Live RAG query test{ANSI_RESET} ({len(candidates)} KBs, timeout={args.rag_timeout:.0f}s each)")
+    print(
+        f"{ANSI_BOLD}Phase 2: Live RAG query test{ANSI_RESET} "
+        f"({len(all_kb_names)} KBs, parallel, timeout={args.rag_timeout:.0f}s each)"
+    )
     print(f"{'=' * 60}")
+
+    async def _test_one(kb_name: str) -> tuple[str, bool, str]:
+        ok, msg = await _test_rag_query(kb_name, str(kb_base), timeout=args.rag_timeout)
+        return kb_name, ok, msg
+
+    results = await asyncio.gather(*[_test_one(name) for name in all_kb_names])
 
     rag_pass: list[str] = []
     rag_fail: list[str] = []
-
-    for i, kb_name in enumerate(candidates, 1):
-        print(f"\n  [{i}/{len(candidates)}] {kb_name} ... ", end="", flush=True)
-        ok, msg = await _test_rag_query(kb_name, str(kb_base), timeout=args.rag_timeout)
+    for kb_name, ok, msg in sorted(results, key=lambda r: r[0]):
         if ok:
-            print(f"{ANSI_GREEN}PASS{ANSI_RESET} {ANSI_DIM}{msg}{ANSI_RESET}")
+            print(f"  {ANSI_GREEN}✓{ANSI_RESET} {kb_name}  {ANSI_DIM}{msg}{ANSI_RESET}")
             rag_pass.append(kb_name)
         else:
-            print(f"{ANSI_RED}FAIL{ANSI_RESET} {msg}")
+            print(f"  {ANSI_RED}✗{ANSI_RESET} {kb_name}  {msg}")
             rag_fail.append(kb_name)
-            if kb_name in groups["ok"]:
-                groups["ok"].remove(kb_name)
-                groups["error"].append(kb_name)
-            elif kb_name in groups["warn"]:
-                groups["warn"].remove(kb_name)
-                groups["error"].append(kb_name)
 
     logging.disable(logging.NOTSET)
 
