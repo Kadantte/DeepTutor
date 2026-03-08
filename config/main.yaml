@@ -51,4 +51,4 @@ solve:
   observation_max_tokens: 2000  # Truncation limit for tool results
   enable_citations: true
   save_intermediate_results: true
-  detailed_answer: false        # true = iterative step-by-step writing; false = single-shot
+  detailed_answer: true        # true = iterative step-by-step writing; false = single-shot

@@ -190,12 +190,14 @@ async def mock_tutor_respond(
                     query=student_message,
                     kb_name=kb_name,
                     mode="naive",
+                    only_need_context=True,
+                    top_k=2,
                 )
             rag_answer = (rag_result.get("answer") or rag_result.get("content") or "").strip()
             if rag_answer:
                 rag_context = (
                     "## Retrieved context (RAG, naive mode)\n"
-                    f"{rag_answer[:4000]}\n\n"
+                    f"{rag_answer[:1500]}\n\n"
                 )
         except Exception as e:
             logger.warning("RAG retrieval failed for kb=%s: %s", kb_name, e)
@@ -219,16 +221,32 @@ async def mock_tutor_respond(
     return response
 
 
-_TUTOR_INSTRUCTION_PREFIX = (
+_TUTOR_INSTRUCTION_BASE = (
     "You are tutoring a student one-on-one. Respond as a tutor, NOT as an essay writer.\n"
-    "Guidelines:\n"
-    "- First, diagnose what specific concept or step the student is confused about.\n"
-    "- Explain the 'why' behind the concept using concrete examples from the source material.\n"
-    "- If a misconception is present, address it directly and explain the correct understanding.\n"
-    "- End with a short guiding question to check the student's understanding.\n"
-    "- Keep the response focused and conversational (NOT a long structured essay).\n\n"
-    "Student says: "
+    "Required response order:\n"
+    "1) Diagnose the student's specific confusion in one short sentence.\n"
+    "2) Explain the 'why' clearly and directly.\n"
+    "3) Give one concrete check the student can run immediately.\n"
+    "4) End with one short guiding question.\n\n"
+    "Style constraints:\n"
+    "- Conversational teaching tone, not a report.\n"
+    "- Maximum 5 sentences total.\n"
+    "- No section headings, no bullet lists, no references section.\n"
+    "- At most one equation if truly needed.\n"
 )
+
+
+def _build_tutor_instruction(student_message: str) -> str:
+    """Build adaptive tutoring instruction without rule-based matching."""
+    _ = student_message  # Keep signature stable for callers.
+    adaptive = (
+        "Adaptive strategy:\n"
+        "- Infer the student's state directly from the latest message and recent context.\n"
+        "- If the student seems confused, simplify language and explain in 2-3 clear steps.\n"
+        "- If the student seems partially confident, do a quick understanding check and then extend by one level.\n"
+        "- If the student appears to hold a misconception, explicitly contrast the wrong idea vs the correct one.\n\n"
+    )
+    return _TUTOR_INSTRUCTION_BASE + adaptive + "Student says: "
 
 
 async def deep_tutor_respond(
@@ -247,7 +265,7 @@ async def deep_tutor_respond(
     if not kb_name:
         return "(DeepTutor unavailable: missing kb_name in entry.)"
 
-    question = _TUTOR_INSTRUCTION_PREFIX + student_message
+    question = _build_tutor_instruction(student_message) + student_message
 
     result = await solve_question(
         workspace=workspace,

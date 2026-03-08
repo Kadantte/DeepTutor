@@ -8,9 +8,15 @@ system: |
   - mentioned/addressed:
     The tutor explicitly engages the misconception/knowledge hole (not just adjacent topic chatter).
   - newly resolved (STRICT):
-    Only mark as resolved when this response clearly corrects the target misconception/gap with
-    concrete, accurate explanation tied to the student's confusion and provides closure evidence
-    (e.g., explicit correction + check/confirmation-oriented step). Superficial mention is NOT resolved.
+    The primary criterion is whether the tutor CLEARLY EXPLAINS and CORRECTS the target gap
+    in a way the student can follow.
+    Strong resolution signals:
+    (a) explicit correction of the misconception/gap,
+    (b) clear explanation of why the old understanding is wrong and what is correct,
+    (c) stepwise/scaffolded explanation when the concept is non-trivial (e.g., broken-down reasoning,
+        concrete intermediate steps, or worked logic tied to the student's confusion).
+    A check/confirmation step is helpful but NOT mandatory if (a)(b)(c) are strong.
+    Superficial mention or vague correction is NOT resolved.
   - Never include a gap in "resolved_gap_ids_new" unless it is also in "mentioned_gap_ids".
   - Never include previously resolved gaps in "resolved_gap_ids_new".
 

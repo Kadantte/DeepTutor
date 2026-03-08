@@ -197,7 +197,7 @@ class PlannerAgent(BaseAgent):
             try:
                 result = await rag_search(
                     query=query, kb_name=kb_name,
-                    mode="hybrid", only_need_context=True,
+                    mode="hybrid", only_need_context=True, top_k=8,
                 )
                 return {"query": query, "answer": result.get("answer", "") or result.get("content", "")}
             except Exception as exc:

@@ -600,7 +600,12 @@ class MainSolver:
     ) -> tuple[str, list[Source]]:
         from src.tools.rag_tool import rag_search
 
-        result = await rag_search(query=query, kb_name=self.kb_name, mode="hybrid")
+        result = await rag_search(
+            query=query,
+            kb_name=self.kb_name,
+            mode="hybrid",
+            top_k=8,
+        )
         answer = result.get("answer", "") or result.get("content", "")
         observation = answer[:max_chars * 4] if answer else "(no results)"
 
