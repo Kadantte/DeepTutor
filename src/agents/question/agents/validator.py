@@ -136,13 +136,24 @@ class Validator(BaseAgent):
         )
 
         try:
-            response = await self.call_llm(
-                user_prompt=user_prompt,
-                system_prompt=system_prompt or "",
-                response_format={"type": "json_object"},
-                temperature=0.2,
-                stage="validator_decision",
-            )
+            try:
+                response = await self.call_llm(
+                    user_prompt=user_prompt,
+                    system_prompt=system_prompt or "",
+                    response_format={"type": "json_object"},
+                    temperature=0.2,
+                    stage="validator_decision",
+                )
+            except Exception as exc:
+                self.logger.warning(
+                    f"Validator JSON mode failed, retrying without response_format: {exc}"
+                )
+                response = await self.call_llm(
+                    user_prompt=user_prompt,
+                    system_prompt=system_prompt or "",
+                    temperature=0.2,
+                    stage="validator_decision_fallback",
+                )
             return self._parse_json_like(response)
         except Exception as exc:
             self.logger.warning(f"Validator LLM failed, fallback reject: {exc}")

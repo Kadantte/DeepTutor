@@ -67,12 +67,13 @@ class Generator(BaseAgent):
         """
         # Step 1: Plan tools
         tool_plan = await self._plan_tools(template, user_topic, preference)
+        plan_prompt_trace = tool_plan.pop("_prompt_trace", {})
 
         # Step 2: Execute planned tools
         tool_context = await self._execute_tools(template, user_topic, tool_plan)
 
         # Step 3: Generate Q-A pair
-        payload = await self._generate_payload(
+        payload, generation_prompt_trace = await self._generate_payload(
             template=template,
             user_topic=user_topic,
             preference=preference,
@@ -105,6 +106,10 @@ class Generator(BaseAgent):
                 "reference_question": template.reference_question,
                 "tool_plan": tool_plan,
                 "tool_context_keys": [k for k, v in tool_context.items() if v],
+                "prompt_trace": {
+                    "tool_plan_prompt": plan_prompt_trace,
+                    "generation_prompt": generation_prompt_trace,
+                },
                 "code_result": code_result,
                 "verification_code": payload.get("verification_code", ""),
                 "validator_feedback": validator_feedback,
@@ -127,20 +132,31 @@ class Generator(BaseAgent):
             # No prompt available — fall back to conservative defaults
             return self._default_tool_plan()
 
-        try:
-            prompt = plan_prompt_template.format(
-                template=json.dumps(template.__dict__, ensure_ascii=False, indent=2),
-                user_topic=user_topic,
-                preference=preference or "(none)",
-                available_tools=self._describe_available_tools(),
-            )
+        system_prompt = self.get_prompt("system", "") or ""
+        prompt = plan_prompt_template.format(
+            template=json.dumps(template.__dict__, ensure_ascii=False, indent=2),
+            user_topic=user_topic,
+            preference=preference or "(none)",
+            available_tools=self._describe_available_tools(),
+        )
 
-            response = await self.call_llm(
-                user_prompt=prompt,
-                system_prompt=self.get_prompt("system", "") or "",
-                response_format={"type": "json_object"},
-                stage="generator_plan_tools",
-            )
+        try:
+            try:
+                response = await self.call_llm(
+                    user_prompt=prompt,
+                    system_prompt=system_prompt,
+                    response_format={"type": "json_object"},
+                    stage="generator_plan_tools",
+                )
+            except Exception as exc:
+                self.logger.warning(
+                    f"Tool planning JSON mode failed, retrying without response_format: {exc}"
+                )
+                response = await self.call_llm(
+                    user_prompt=prompt,
+                    system_prompt=system_prompt,
+                    stage="generator_plan_tools_fallback",
+                )
             plan = self._parse_json_like(response)
 
             # Respect config-level tool flags (config can disable tools globally)
@@ -153,6 +169,10 @@ class Generator(BaseAgent):
             plan["use_code"] = bool(
                 plan.get("use_code", False)
             ) and self.tool_flags.get("write_code", True)
+            plan["_prompt_trace"] = {
+                "system_prompt": system_prompt,
+                "user_prompt": prompt,
+            }
             return plan
 
         except Exception as exc:
@@ -166,6 +186,7 @@ class Generator(BaseAgent):
             "use_web": False,
             "use_code": False,
             "reasoning": "default plan (no LLM planning)",
+            "_prompt_trace": {},
         }
 
     def _describe_available_tools(self) -> str:
@@ -243,7 +264,7 @@ class Generator(BaseAgent):
         preference: str,
         validator_feedback: str,
         tool_context: dict[str, str],
-    ) -> dict[str, Any]:
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
         system_prompt = self.get_prompt("system", "")
         user_prompt_template = self.get_prompt("generate", "")
         if not user_prompt_template:
@@ -273,12 +294,22 @@ class Generator(BaseAgent):
             tool_context=json.dumps(tool_summary, ensure_ascii=False, indent=2),
         )
 
-        response = await self.call_llm(
-            user_prompt=user_prompt,
-            system_prompt=system_prompt or "",
-            response_format={"type": "json_object"},
-            stage="generator_build_qa",
-        )
+        try:
+            response = await self.call_llm(
+                user_prompt=user_prompt,
+                system_prompt=system_prompt or "",
+                response_format={"type": "json_object"},
+                stage="generator_build_qa",
+            )
+        except Exception as exc:
+            self.logger.warning(
+                f"Generator JSON mode failed, retrying without response_format: {exc}"
+            )
+            response = await self.call_llm(
+                user_prompt=user_prompt,
+                system_prompt=system_prompt or "",
+                stage="generator_build_qa_fallback",
+            )
         payload = self._parse_json_like(response)
 
         if "question" not in payload or not str(payload.get("question", "")).strip():
@@ -293,7 +324,11 @@ class Generator(BaseAgent):
         if "question_type" not in payload:
             payload["question_type"] = template.question_type
 
-        return payload
+        return payload, {
+            "system_prompt": system_prompt or "",
+            "user_prompt": user_prompt,
+            "tool_context": tool_summary,
+        }
 
     # ------------------------------------------------------------------
     # Step 4: Optional Code Verification
