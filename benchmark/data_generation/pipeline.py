@@ -212,7 +212,7 @@ class DataGenerationPipeline:
         )
         self.profiles[kb_name] = profiles
 
-        # Stage 4 & 5: Generate gaps + tasks per profile, loop until min_tasks达标
+        # Stage 4 & 5: Generate gaps and tasks per profile, looping until min_tasks is satisfied
         gap_cfg = self.config.get("gap_generation", {})
         task_cfg = self.config.get("task_generation", {})
         logger.info(f"[Stage 4-5] Generating gaps and tasks for '{kb_name}' (min {task_cfg.get('min_tasks_per_profile', 3)} tasks/profile)...")
@@ -309,7 +309,7 @@ class DataGenerationPipeline:
                     task_index_offset += len(tasks)
 
                     if len(all_tasks) >= min_tasks:
-                        logger.info(f"  {profile_id}: {len(all_tasks)} tasks (达标)")
+                        logger.info(f"  {profile_id}: {len(all_tasks)} tasks (threshold met)")
                         break
                     logger.info(f"  {profile_id}: {len(all_tasks)}/{min_tasks} tasks, generating more gaps...")
 

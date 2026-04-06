@@ -43,7 +43,7 @@ gap_generation:
 
 # Task generation configuration
 task_generation:
-  # Minimum tasks per profile; keep generating gaps+tasks until达标
+  # Minimum tasks per profile; keep generating gaps and tasks until the threshold is met
   min_tasks_per_profile: 3
   # Gaps per batch when generating more to meet min_tasks
   gaps_per_batch: 3

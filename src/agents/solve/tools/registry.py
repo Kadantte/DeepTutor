@@ -112,7 +112,7 @@ class ToolRegistry:
                     "the uploaded knowledge base",
                     f'the knowledge base "{kb_name}"',
                 )
-                desc = desc.replace("已上传的知识库", f'知识库 "{kb_name}"')
+                desc = desc.replace("the uploaded knowledge base", f'knowledge base "{kb_name}"')
             lines.append(f"- {tool.name}: {desc}")
         return "\n".join(lines)
 

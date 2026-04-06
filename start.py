@@ -76,17 +76,17 @@ def _list_knowledge_bases() -> list[str]:
 def _select_kb(current: str = "ai-textbook") -> str:
     kbs = _list_knowledge_bases()
     if not kbs:
-        print(f"  {YELLOW}未找到知识库，使用默认: {current}{RESET}")
+        print(f"  {YELLOW}No knowledge bases found, using default: {current}{RESET}")
         return current
 
-    print(f"\n  {BOLD}可用知识库:{RESET}")
+    print(f"\n  {BOLD}Available knowledge bases:{RESET}")
     for i, name in enumerate(kbs, 1):
         marker = f" {CYAN}<-{RESET}" if name == current else ""
         print(f"    {CYAN}{i}{RESET}) {name}{marker}")
-    print(f"    {CYAN}0{RESET}) 保持当前 ({current})")
+    print(f"    {CYAN}0{RESET}) Keep current ({current})")
 
     while True:
-        raw = input(f"  选择 [{DIM}1{RESET}]: ").strip()
+        raw = input(f"  Select [{DIM}1{RESET}]: ").strip()
         if not raw:
             return kbs[0]
         if raw == "0":
@@ -98,7 +98,7 @@ def _select_kb(current: str = "ai-textbook") -> str:
         except ValueError:
             if raw in kbs:
                 return raw
-        print(f"  {RED}无效选择，请重试。{RESET}")
+        print(f"  {RED}Invalid selection, please try again.{RESET}")
 
 
 async def _ensure_personalization() -> bool:
@@ -139,16 +139,16 @@ async def _flush_events() -> None:
 
 async def run_solve_mode(kb_name: str) -> None:
     """Solve a question — mirrors ``src.agents.solve.cli`` logic."""
-    _header("解题系统 (Solver)")
+    _header("Solve System (Solver)")
 
     kb_name = _select_kb(current=kb_name)
-    print(f"  {CHECK} 知识库: {BOLD}{kb_name}{RESET}")
+    print(f"  {CHECK} Knowledge base: {BOLD}{kb_name}{RESET}")
 
-    language = input(f"  语言 (en/zh) [{DIM}en{RESET}]: ").strip().lower() or "en"
+    language = input(f"  Language (en/zh) [{DIM}en{RESET}]: ").strip().lower() or "en"
     if language not in {"en", "zh"}:
         language = "en"
 
-    print(f"\n  请输入问题 (多行输入，空行结束):")
+    print(f"\n  Enter your question (multi-line input, blank line to finish):")
     print(_hr())
 
     lines: list[str] = []
@@ -159,13 +159,13 @@ async def run_solve_mode(kb_name: str) -> None:
         lines.append(line)
 
     if not lines:
-        print(f"  {YELLOW}未输入问题，返回主菜单{RESET}")
+        print(f"  {YELLOW}No question entered, returning to the main menu.{RESET}")
         return
 
     question = "\n".join(lines)
 
-    print(f"\n  {ARROW} 模式: Plan → ReAct → Write")
-    print(f"  {DIM}正在初始化 Solver...{RESET}")
+    print(f"\n  {ARROW} Mode: Plan -> ReAct -> Write")
+    print(f"  {DIM}Initializing Solver...{RESET}")
 
     try:
         from src.agents.solve import MainSolver
@@ -175,30 +175,30 @@ async def run_solve_mode(kb_name: str) -> None:
 
         result = await solver.solve(question)
 
-        _header("解题完成")
-        print(f"  输出目录:  {CYAN}{result['output_dir']}{RESET}")
-        print(f"  步骤完成:  {result.get('completed_steps', '?')}/{result.get('total_steps', '?')}")
-        print(f"  ReAct 条目: {result.get('total_react_entries', '?')}")
-        print(f"  计划修订:  {result.get('plan_revisions', 0)}")
+        _header("Solve Complete")
+        print(f"  Output directory:  {CYAN}{result['output_dir']}{RESET}")
+        print(f"  Steps completed:  {result.get('completed_steps', '?')}/{result.get('total_steps', '?')}")
+        print(f"  ReAct entries: {result.get('total_react_entries', '?')}")
+        print(f"  Plan revisions:  {result.get('plan_revisions', 0)}")
 
         final_answer = result.get("final_answer", "")
         if final_answer:
-            print(f"\n  {BOLD}答案预览:{RESET}")
+            print(f"\n  {BOLD}Answer preview:{RESET}")
             print(_hr())
             preview_lines = final_answer.split("\n")[:20]
             preview = "\n".join(preview_lines)
             if len(final_answer.split("\n")) > 20:
-                preview += f"\n\n  {DIM}... (完整内容见输出文件) ...{RESET}"
+                preview += f"\n\n  {DIM}... (see the output file for the full content) ...{RESET}"
             print(preview)
             print(_hr())
 
     except Exception as e:
-        _header("解题失败")
+        _header("Solve Failed")
         print(f"  {RED}{e}{RESET}")
         import traceback
         traceback.print_exc()
 
-    print(f"  {DIM}同步记忆...{RESET}", end="", flush=True)
+    print(f"  {DIM}Syncing memory...{RESET}", end="", flush=True)
     await _flush_events()
     print(f" {CHECK}")
 
@@ -216,63 +216,63 @@ async def _cli_progress(data: dict) -> None:
             rd = data.get("current_round", "")
             mx = data.get("max_rounds", "")
             if rd:
-                print(f"    {MAGENTA}🔄 创意循环{RESET} 第 {rd}/{mx} 轮")
+                print(f"    {MAGENTA}🔄 Idea loop{RESET} round {rd}/{mx}")
         elif stage == "generating":
             cur = data.get("current", "")
             tot = data.get("total", "")
             qid = data.get("question_id", "")
             if cur and tot:
-                print(f"    {CYAN}📝 生成中{RESET} {cur}/{tot}  {DIM}{qid}{RESET}")
+                print(f"    {CYAN}📝 Generating{RESET} {cur}/{tot}  {DIM}{qid}{RESET}")
         elif stage == "complete":
             comp = data.get("completed", "?")
             tot = data.get("total", "?")
-            print(f"    {GREEN}✅ 完成{RESET} {comp}/{tot}")
+            print(f"    {GREEN}✅ Complete{RESET} {comp}/{tot}")
         elif stage in ("parsing", "extracting", "uploading"):
             status = data.get("status", "")
             print(f"    {YELLOW}📄 {stage}{RESET} {status}")
     elif msg_type == "templates_ready":
         count = data.get("count", 0)
-        print(f"    {GREEN}📋 模板就绪{RESET} {count} 个")
+        print(f"    {GREEN}📋 Templates ready{RESET} {count}")
     elif msg_type == "idea_round":
         rd = data.get("round", "?")
         cont = data.get("continue_loop", False)
-        status = "继续改进" if cont else "已确定"
-        print(f"    {MAGENTA}💡 创意第 {rd} 轮{RESET} → {status}")
+        status = "Continue refining" if cont else "Finalized"
+        print(f"    {MAGENTA}💡 Idea round {rd}{RESET} → {status}")
     elif msg_type == "question_update":
         qid = data.get("question_id", "")
         attempt = data.get("attempt", 1)
         max_att = data.get("max_attempts", "?")
-        print(f"    {CYAN}⚙  {qid}{RESET} 生成 (尝试 {attempt}/{max_att})")
+        print(f"    {CYAN}⚙  {qid}{RESET} generation (attempt {attempt}/{max_att})")
     elif msg_type == "validating":
         qid = data.get("question_id", "")
         decision = data.get("validation", {}).get("decision", "?")
         icon = CHECK if decision == "approve" else CROSS
-        print(f"    {YELLOW}🔍 {qid}{RESET} 验证 → {icon} {decision}")
+        print(f"    {YELLOW}🔍 {qid}{RESET} validation -> {icon} {decision}")
     elif msg_type == "result":
         qid = data.get("question_id", "")
         approved = data.get("validation", {}).get("approved", False)
         attempts = data.get("attempts", 1)
         icon = CHECK if approved else CROSS
-        print(f"    {icon} {BOLD}{qid}{RESET} ({attempts} 次尝试)")
+        print(f"    {icon} {BOLD}{qid}{RESET} ({attempts}  attempts)")
 
 
 def _print_question_summary(summary: dict) -> None:
-    _header("出题结果摘要")
+    _header("Question Generation Summary")
     success = summary.get("success", False)
     status_icon = f"{GREEN}SUCCESS{RESET}" if success else f"{RED}FAILED{RESET}"
-    print(f"  状态:     {status_icon}")
-    print(f"  来源:     {summary.get('source', '?')}")
-    print(f"  请求:     {summary.get('requested', '?')} 道")
-    print(f"  成功:     {GREEN}{summary.get('completed', 0)}{RESET}")
-    print(f"  失败:     {RED}{summary.get('failed', 0)}{RESET}")
+    print(f"  Status:     {status_icon}")
+    print(f"  Source:     {summary.get('source', '?')}")
+    print(f"  Requested:     {summary.get('requested', '?')} questions")
+    print(f"  Completed:     {GREEN}{summary.get('completed', 0)}{RESET}")
+    print(f"  Failed:     {RED}{summary.get('failed', 0)}{RESET}")
 
     batch_dir = summary.get("batch_dir")
     if batch_dir:
-        print(f"  输出目录: {CYAN}{batch_dir}{RESET}")
+        print(f"  Output directory: {CYAN}{batch_dir}{RESET}")
 
     results = summary.get("results", []) or []
     if results:
-        print(f"\n  {BOLD}题目预览:{RESET}")
+        print(f"\n  {BOLD}Question preview:{RESET}")
         for i, item in enumerate(results, 1):
             qa = item.get("qa_pair", {})
             approved = item.get("success", False)
@@ -280,7 +280,7 @@ def _print_question_summary(summary: dict) -> None:
             q_type = qa.get("question_type", "unknown")
             question = str(qa.get("question", "")).replace("\n", " ")[:100]
             attempts = len(item.get("attempts", []))
-            print(f"  {icon} {i}. [{q_type}] {DIM}({attempts}次){RESET}")
+            print(f"  {icon} {i}. [{q_type}] {DIM}({attempts} attempts){RESET}")
             print(f"     {question}...")
     print()
 
@@ -293,7 +293,7 @@ def _prompt_non_empty(message: str, default: str | None = None) -> str:
             return raw
         if default is not None:
             return default
-        print(f"  {RED}输入不能为空，请重试。{RESET}")
+        print(f"  {RED}Input cannot be empty, please try again.{RESET}")
 
 
 def _prompt_int(message: str, default: int) -> int:
@@ -307,7 +307,7 @@ def _prompt_int(message: str, default: int) -> int:
                 return value
         except ValueError:
             pass
-        print(f"  {RED}请输入正整数。{RESET}")
+        print(f"  {RED}Please enter a positive integer.{RESET}")
 
 
 # ── Interactive answering session ─────────────────────────────────────
@@ -318,7 +318,7 @@ def _display_question(idx: int, qa: dict) -> None:
     question_text = qa.get("question", "")
     options = qa.get("options") or {}
 
-    print(f"\n  {BOLD}题目 {idx}{RESET}  [{q_type}]")
+    print(f"\n  {BOLD}Question {idx}{RESET}  [{q_type}]")
     print(_hr())
     print(f"  {question_text}")
 
@@ -350,14 +350,14 @@ async def _run_answer_session(summary: dict) -> None:
     results = summary.get("results", []) or []
     approved_results = [r for r in results if r.get("success")]
     if not approved_results:
-        print(f"  {YELLOW}没有可用的题目进行作答。{RESET}")
+        print(f"  {YELLOW}No available questions to answer.{RESET}")
         return
 
     batch_dir = summary.get("batch_dir", "")
     trace_id = Path(batch_dir).name if batch_dir else ""
 
-    _header(f"答题环节 ({len(approved_results)} 道题)")
-    print(f"  {DIM}直接回车可跳过该题，输入 /quit 退出答题{RESET}\n")
+    _header(f"Answering Session ({len(approved_results)} questions)")
+    print(f"  {DIM}Press Enter to skip this question, or type /quit to exit the session.{RESET}\n")
 
     answers_recorded = 0
     correct_count = 0
@@ -373,43 +373,43 @@ async def _run_answer_session(summary: dict) -> None:
         _display_question(i, qa)
 
         try:
-            user_input = input(f"  {ARROW} 你的回答: ").strip()
+            user_input = input(f"  {ARROW} Your answer: ").strip()
         except (EOFError, KeyboardInterrupt):
-            print(f"\n  {YELLOW}答题中断。{RESET}")
+            print(f"\n  {YELLOW}Answering interrupted.{RESET}")
             break
 
         if user_input.lower() in ("/quit", "/exit", "/q"):
-            print(f"  {DIM}退出答题。{RESET}")
+            print(f"  {DIM}Exiting answer session.{RESET}")
             break
 
         if not user_input:
             skipped_count += 1
-            print(f"  {DIM}(已跳过){RESET}")
+            print(f"  {DIM}(skipped){RESET}")
             continue
 
         judged = _judge_answer(user_input, correct_answer, q_type)
 
         if judged == "correct":
-            print(f"  {CHECK} {GREEN}正确！{RESET}")
+            print(f"  {CHECK} {GREEN}Correct!{RESET}")
             correct_count += 1
         elif judged == "wrong":
-            print(f"  {CROSS} {RED}错误{RESET}  正确答案: {GREEN}{correct_answer}{RESET}")
+            print(f"  {CROSS} {RED}Incorrect{RESET}  Correct answer: {GREEN}{correct_answer}{RESET}")
             wrong_count += 1
         elif judged == "partial":
-            print(f"  {YELLOW}~ 部分匹配{RESET}  参考答案: {correct_answer}")
+            print(f"  {YELLOW}~ Partial match{RESET}  Reference answer: {correct_answer}")
         elif judged == "skipped":
             skipped_count += 1
-            print(f"  {DIM}(已跳过){RESET}")
+            print(f"  {DIM}(skipped){RESET}")
             continue
         else:
-            print(f"  {YELLOW}? 待判定{RESET}  参考答案: {correct_answer}")
+            print(f"  {YELLOW}? Pending review{RESET}  Reference answer: {correct_answer}")
 
         explanation = qa.get("explanation", "")
         if explanation:
             short_exp = explanation[:200]
             if len(explanation) > 200:
                 short_exp += "..."
-            print(f"  {DIM}解析: {short_exp}{RESET}")
+            print(f"  {DIM}Explanation: {short_exp}{RESET}")
 
         if trace_id:
             try:
@@ -428,7 +428,7 @@ async def _run_answer_session(summary: dict) -> None:
                 pass
 
     if answers_recorded > 0 and trace_id:
-        print(f"\n  {DIM}同步答题记忆...{RESET}", end="", flush=True)
+        print(f"\n  {DIM}Syncing answer memory...{RESET}", end="", flush=True)
         await _flush_events()
         try:
             from src.personalization.service import get_personalization_service
@@ -439,14 +439,14 @@ async def _run_answer_session(summary: dict) -> None:
             pass
         print(f" {CHECK}")
 
-    _header("答题结果")
+    _header("Answer Results")
     total = correct_count + wrong_count + skipped_count
-    print(f"  总计:   {total} 题")
-    print(f"  正确:   {GREEN}{correct_count}{RESET}")
-    print(f"  错误:   {RED}{wrong_count}{RESET}")
-    print(f"  跳过:   {DIM}{skipped_count}{RESET}")
+    print(f"  Total:   {total}")
+    print(f"  Correct:   {GREEN}{correct_count}{RESET}")
+    print(f"  Incorrect:   {RED}{wrong_count}{RESET}")
+    print(f"  Skipped:   {DIM}{skipped_count}{RESET}")
     if answers_recorded > 0:
-        print(f"  {CHECK} 已记录 {answers_recorded} 条答题记录到记忆系统")
+        print(f"  {CHECK} Recorded {answers_recorded} answer records to the memory system")
     print()
 
 
@@ -475,23 +475,23 @@ def _build_coordinator(kb_name: str, output_dir: str, language: str):
 
 async def run_question_mode(kb_name: str) -> None:
     """Generate questions — mirrors ``src/agents/question/cli.py`` logic."""
-    _header("出题系统 (Question Generator)")
+    _header("Question Generation System (Question Generator)")
 
     kb_name = _select_kb(current=kb_name)
-    print(f"  {CHECK} 知识库: {BOLD}{kb_name}{RESET}")
+    print(f"  {CHECK} Knowledge base: {BOLD}{kb_name}{RESET}")
 
-    language = input(f"  语言 (en/zh) [{DIM}zh{RESET}]: ").strip().lower() or "zh"
+    language = input(f"  Language (en/zh) [{DIM}zh{RESET}]: ").strip().lower() or "zh"
     if language not in {"en", "zh"}:
         language = "zh"
 
     default_output = str(PROJECT_ROOT / "data" / "user" / "question")
-    output_dir = _prompt_non_empty("输出目录", default_output)
+    output_dir = _prompt_non_empty("Output directory", default_output)
 
     coordinator = _build_coordinator(kb_name=kb_name, output_dir=output_dir, language=language)
 
-    print(f"\n  {BOLD}请选择模式:{RESET}")
-    print(f"    {CYAN}1{RESET}) Topic 模式 — 基于主题生成")
-    print(f"    {CYAN}2{RESET}) Mimic 模式 — 基于试卷仿题")
+    print(f"\n  {BOLD}Select a mode:{RESET}")
+    print(f"    {CYAN}1{RESET}) Topic mode - generate from a topic")
+    print(f"    {CYAN}2{RESET}) Mimic mode - mimic an exam paper")
 
     mode_choice = input(f"  {ARROW} ").strip()
 
@@ -502,12 +502,12 @@ async def run_question_mode(kb_name: str) -> None:
 
 
 async def _run_topic_submode(coordinator) -> None:
-    _header("Topic 模式")
-    user_topic = _prompt_non_empty("主题 (如: Lagrange multipliers)")
-    preference = input(f"  偏好 (可留空): ").strip()
-    num_questions = _prompt_int("题目数量", 3)
+    _header("Topic Mode")
+    user_topic = _prompt_non_empty("Topic (e.g. Lagrange multipliers)")
+    preference = input(f"  Preference (optional): ").strip()
+    num_questions = _prompt_int("Number of questions", 3)
 
-    print(f"\n  {ARROW} 开始生成 {BOLD}{num_questions}{RESET} 道题...")
+    print(f"\n  {ARROW} Generating {BOLD}{num_questions}{RESET} questions...")
     print(_hr())
 
     coordinator.set_ws_callback(_cli_progress)
@@ -517,7 +517,7 @@ async def _run_topic_submode(coordinator) -> None:
         num_questions=num_questions,
     )
 
-    print(f"  {DIM}同步记忆系统...{RESET}", end="", flush=True)
+    print(f"  {DIM}Syncing memory system...{RESET}", end="", flush=True)
     await _flush_events()
     print(f" {CHECK}")
 
@@ -526,7 +526,7 @@ async def _run_topic_submode(coordinator) -> None:
     approved = [r for r in (summary.get("results") or []) if r.get("success")]
     if approved:
         try:
-            ans_choice = input(f"  {ARROW} 是否开始答题? (y/n) [{DIM}y{RESET}]: ").strip().lower()
+            ans_choice = input(f"  {ARROW} Start answering? (y/n) [{DIM}y{RESET}]: ").strip().lower()
         except (EOFError, KeyboardInterrupt):
             ans_choice = "n"
         if ans_choice != "n":
@@ -534,20 +534,20 @@ async def _run_topic_submode(coordinator) -> None:
 
 
 async def _run_mimic_submode(coordinator) -> None:
-    _header("Mimic 模式")
-    mode = _prompt_non_empty("输入模式 [upload/parsed]", "parsed").lower()
+    _header("Mimic Mode")
+    mode = _prompt_non_empty("Input mode [upload/parsed]", "parsed").lower()
     if mode not in {"upload", "parsed"}:
-        print(f"  {YELLOW}无效模式，使用 parsed。{RESET}")
+        print(f"  {YELLOW}Invalid mode, using parsed.{RESET}")
         mode = "parsed"
 
     if mode == "upload":
-        exam_path = _prompt_non_empty("PDF 路径")
+        exam_path = _prompt_non_empty("PDF path")
     else:
-        exam_path = _prompt_non_empty("已解析试卷目录路径")
+        exam_path = _prompt_non_empty("Parsed exam directory path")
 
-    max_questions = _prompt_int("最大题目数", 5)
+    max_questions = _prompt_int("Maximum question count", 5)
 
-    print(f"\n  {ARROW} 开始解析并生成...")
+    print(f"\n  {ARROW} Starting parsing and generation...")
     print(_hr())
 
     coordinator.set_ws_callback(_cli_progress)
@@ -557,7 +557,7 @@ async def _run_mimic_submode(coordinator) -> None:
         paper_mode=mode,
     )
 
-    print(f"  {DIM}同步记忆系统...{RESET}", end="", flush=True)
+    print(f"  {DIM}Syncing memory system...{RESET}", end="", flush=True)
     await _flush_events()
     print(f" {CHECK}")
 
@@ -566,7 +566,7 @@ async def _run_mimic_submode(coordinator) -> None:
     approved = [r for r in (summary.get("results") or []) if r.get("success")]
     if approved:
         try:
-            ans_choice = input(f"  {ARROW} 是否开始答题? (y/n) [{DIM}y{RESET}]: ").strip().lower()
+            ans_choice = input(f"  {ARROW} Start answering? (y/n) [{DIM}y{RESET}]: ").strip().lower()
         except (EOFError, KeyboardInterrupt):
             ans_choice = "n"
         if ans_choice != "n":
@@ -577,30 +577,30 @@ async def _run_mimic_submode(coordinator) -> None:
 
 
 def show_settings() -> None:
-    _header("系统设置")
+    _header("System Settings")
 
     try:
         llm_config = get_llm_config()
-        print(f"  {BOLD}LLM 配置:{RESET}")
-        print(f"    模型:     {llm_config.model or 'N/A'}")
-        print(f"    端点:     {llm_config.base_url or 'N/A'}")
-        print(f"    API Key:  {'已配置' if llm_config.api_key else '未配置'}")
+        print(f"  {BOLD}LLM configuration:{RESET}")
+        print(f"    Model:     {llm_config.model or 'N/A'}")
+        print(f"    Endpoint:     {llm_config.base_url or 'N/A'}")
+        print(f"    API Key:  {'Configured' if llm_config.api_key else 'Not configured'}")
     except Exception as e:
-        print(f"  {RED}加载失败: {e}{RESET}")
+        print(f"  {RED}Load failed: {e}{RESET}")
 
     kbs = _list_knowledge_bases()
-    print(f"\n  {BOLD}可用知识库:{RESET}")
+    print(f"\n  {BOLD}Available knowledge bases:{RESET}")
     for i, kb in enumerate(kbs, 1):
         print(f"    {i}. {kb}")
 
-    print(f"\n  {BOLD}配置文件:{RESET}")
+    print(f"\n  {BOLD}Configuration files:{RESET}")
     for name in [".env", "DeepTutor.env"]:
         p = PROJECT_ROOT / name
         status = f"{GREEN}✓{RESET}" if p.exists() else f"{RED}✗{RESET}"
         print(f"    {status} {p}")
 
-    print(f"\n  {DIM}提示: 直接编辑 .env 文件即可修改配置{RESET}")
-    input(f"\n  按回车返回主菜单...")
+    print(f"\n  {DIM}Tip: edit the .env file directly to update the configuration.{RESET}")
+    input(f"\n  Press Enter to return to the main menu...")
 
 
 # ── Main loop ────────────────────────────────────────────────────────
@@ -616,18 +616,18 @@ async def run() -> None:
 
         init_user_directories(PROJECT_ROOT)
     except Exception as e:
-        print(f"  {YELLOW}WARNING: 初始化用户目录失败: {e}{RESET}")
+        print(f"  {YELLOW}WARNING: Failed to initialize user directories: {e}{RESET}")
 
     try:
         llm_config = get_llm_config()
         if not llm_config.api_key:
-            print(f"  {RED}ERROR: 未配置 API Key，请检查 .env 文件{RESET}")
+            print(f"  {RED}ERROR: API key is not configured. Please check the .env file.{RESET}")
             sys.exit(1)
     except ValueError as e:
         print(f"  {RED}ERROR: {e}{RESET}")
         sys.exit(1)
 
-    print(f"  {DIM}正在初始化记忆系统...{RESET}", end="", flush=True)
+    print(f"  {DIM}Initializing memory system...{RESET}", end="", flush=True)
     mem_ok = await _ensure_personalization()
     print(f" {CHECK}" if mem_ok else f" {CROSS}")
 
@@ -635,11 +635,11 @@ async def run() -> None:
 
     while True:
         try:
-            print(f"\n  {BOLD}请选择功能:{RESET}")
-            print(f"    {CYAN}1{RESET}) 解题系统 (Solver)")
-            print(f"    {CYAN}2{RESET}) 出题系统 (Question Generator)")
-            print(f"    {CYAN}3{RESET}) 系统设置 (Settings)")
-            print(f"    {CYAN}q{RESET}) 退出")
+            print(f"\n  {BOLD}Select a function:{RESET}")
+            print(f"    {CYAN}1{RESET}) Solve System (Solver)")
+            print(f"    {CYAN}2{RESET}) Question Generation System (Question Generator)")
+            print(f"    {CYAN}3{RESET}) System Settings (Settings)")
+            print(f"    {CYAN}q{RESET}) Exit")
             choice = input(f"  {ARROW} ").strip().lower()
 
             if choice == "1":
@@ -650,22 +650,22 @@ async def run() -> None:
                 show_settings()
                 continue
             elif choice in {"q", "quit", "exit", "4"}:
-                print(f"\n  {DIM}感谢使用 DeepTutor!{RESET}\n")
+                print(f"\n  {DIM}Thanks for using DeepTutor!{RESET}\n")
                 break
             else:
-                print(f"  {RED}无效选项，请重试。{RESET}")
+                print(f"  {RED}Invalid option, please try again.{RESET}")
                 continue
 
-            cont = input(f"\n  继续使用? (y/n) [{DIM}y{RESET}]: ").strip().lower()
+            cont = input(f"\n  Continue? (y/n) [{DIM}y{RESET}]: ").strip().lower()
             if cont == "n":
-                print(f"\n  {DIM}感谢使用 DeepTutor!{RESET}\n")
+                print(f"\n  {DIM}Thanks for using DeepTutor!{RESET}\n")
                 break
 
         except KeyboardInterrupt:
-            print(f"\n\n  {YELLOW}程序中断。{RESET}\n")
+            print(f"\n\n  {YELLOW}Program interrupted.{RESET}\n")
             break
         except Exception as e:
-            print(f"\n  {RED}错误: {e}{RESET}")
+            print(f"\n  {RED}Incorrect: {e}{RESET}")
             import traceback
             traceback.print_exc()
 
@@ -682,7 +682,7 @@ def main():
     try:
         asyncio.run(run())
     except Exception as e:
-        print(f"  {RED}启动失败: {e}{RESET}")
+        print(f"  {RED}Startup failed: {e}{RESET}")
         sys.exit(1)
 
 

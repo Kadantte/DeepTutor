@@ -71,7 +71,7 @@ def _prompt_non_empty(message: str, default: str | None = None) -> str:
             return raw
         if default is not None:
             return default
-        print(f"  {RED}输入不能为空，请重试。{RESET}")
+        print(f"  {RED}Input cannot be empty, please try again.{RESET}")
 
 
 def _list_kbs() -> list[str]:
@@ -87,20 +87,20 @@ def _select_kb() -> str:
     """Show a numbered list of KBs and let the user pick one."""
     kbs = _list_kbs()
     if not kbs:
-        print(f"  {YELLOW}未找到已有知识库，请手动输入名称。{RESET}")
-        return _prompt_non_empty("KB 名称", "ai_textbook")
+        print(f"  {YELLOW}No existing knowledge base was found. Please enter one manually.{RESET}")
+        return _prompt_non_empty("KB name", "ai_textbook")
 
-    print(f"\n  {BOLD}可用知识库:{RESET}")
+    print(f"\n  {BOLD}Available knowledge bases:{RESET}")
     for i, name in enumerate(kbs, 1):
         print(f"    {CYAN}{i}{RESET}) {name}")
-    print(f"    {CYAN}0{RESET}) 手动输入")
+    print(f"    {CYAN}0{RESET}) Enter manually")
 
     while True:
-        raw = input(f"  选择 [{DIM}1{RESET}]: ").strip()
+        raw = input(f"  Select [{DIM}1{RESET}]: ").strip()
         if not raw:
             return kbs[0]
         if raw == "0":
-            return _prompt_non_empty("KB 名称")
+            return _prompt_non_empty("KB name")
         try:
             idx = int(raw)
             if 1 <= idx <= len(kbs):
@@ -109,7 +109,7 @@ def _select_kb() -> str:
             # Allow typing a name directly
             if raw in kbs:
                 return raw
-        print(f"  {RED}无效选择，请重试。{RESET}")
+        print(f"  {RED}Invalid selection, please try again.{RESET}")
 
 
 def _prompt_int(message: str, default: int) -> int:
@@ -123,7 +123,7 @@ def _prompt_int(message: str, default: int) -> int:
                 return value
         except ValueError:
             pass
-        print(f"  {RED}请输入正整数。{RESET}")
+        print(f"  {RED}Please enter a positive integer.{RESET}")
 
 
 # ── Progress callback ────────────────────────────────────────────────
@@ -138,39 +138,39 @@ async def _cli_progress(data: dict[str, Any]) -> None:
             rd = data.get("current_round", "")
             mx = data.get("max_rounds", "")
             if rd:
-                print(f"    {MAGENTA}🔄 创意循环{RESET} 第 {rd}/{mx} 轮")
+                print(f"    {MAGENTA}🔄 Idea loop{RESET} round {rd}/{mx}")
         elif stage == "generating":
             cur = data.get("current", "")
             tot = data.get("total", "")
             qid = data.get("question_id", "")
             if cur and tot:
-                print(f"    {CYAN}📝 生成中{RESET} {cur}/{tot}  {DIM}{qid}{RESET}")
+                print(f"    {CYAN}📝 Generating{RESET} {cur}/{tot}  {DIM}{qid}{RESET}")
         elif stage == "complete":
             comp = data.get("completed", "?")
             tot = data.get("total", "?")
-            print(f"    {GREEN}✅ 完成{RESET} {comp}/{tot}")
+            print(f"    {GREEN}✅ Complete{RESET} {comp}/{tot}")
         elif stage in ("parsing", "extracting", "uploading"):
             status = data.get("status", "")
             print(f"    {YELLOW}📄 {stage}{RESET} {status}")
 
     elif msg_type == "templates_ready":
         count = data.get("count", 0)
-        print(f"    {GREEN}📋 模板就绪{RESET} {count} 个")
+        print(f"    {GREEN}📋 Templates ready{RESET} {count}")
 
     elif msg_type == "idea_round":
         rd = data.get("round", "?")
         fb = data.get("feedback", "")
         cont = data.get("continue_loop", False)
-        status = "继续改进" if cont else "已确定"
-        print(f"    {MAGENTA}💡 创意第 {rd} 轮{RESET} → {status}")
+        status = "Continue refining" if cont else "Finalized"
+        print(f"    {MAGENTA}💡 Idea round {rd}{RESET} → {status}")
         if fb:
-            print(f"       {DIM}反馈: {fb[:100]}{RESET}")
+            print(f"       {DIM}Feedback: {fb[:100]}{RESET}")
 
     elif msg_type == "question_update":
         qid = data.get("question_id", "")
         attempt = data.get("attempt", 1)
         max_att = data.get("max_attempts", "?")
-        print(f"    {CYAN}⚙  {qid}{RESET} 生成 (尝试 {attempt}/{max_att})")
+        print(f"    {CYAN}⚙  {qid}{RESET} generation (attempt {attempt}/{max_att})")
 
     elif msg_type == "validating":
         qid = data.get("question_id", "")
@@ -178,7 +178,7 @@ async def _cli_progress(data: dict[str, Any]) -> None:
         validation = data.get("validation", {})
         decision = validation.get("decision", "?")
         icon = CHECK if decision == "approve" else CROSS
-        print(f"    {YELLOW}🔍 {qid}{RESET} 验证 → {icon} {decision}")
+        print(f"    {YELLOW}🔍 {qid}{RESET} validation -> {icon} {decision}")
 
     elif msg_type == "result":
         qid = data.get("question_id", "")
@@ -186,7 +186,7 @@ async def _cli_progress(data: dict[str, Any]) -> None:
         approved = validation.get("approved", False)
         attempts = data.get("attempts", 1)
         icon = CHECK if approved else CROSS
-        print(f"    {icon} {BOLD}{qid}{RESET} ({attempts} 次尝试)")
+        print(f"    {icon} {BOLD}{qid}{RESET} ({attempts}  attempts)")
 
 
 # ── PersonalizationService startup ────────────────────────────────────
@@ -230,23 +230,23 @@ async def _flush_events() -> None:
 # ── Result display ────────────────────────────────────────────────────
 
 def _print_summary(summary: dict[str, Any]) -> None:
-    _header("结果摘要")
+    _header("Summary")
     success = summary.get("success", False)
     status_icon = f"{GREEN}SUCCESS{RESET}" if success else f"{RED}FAILED{RESET}"
-    print(f"  状态:     {status_icon}")
-    print(f"  来源:     {summary.get('source', '?')}")
-    print(f"  请求:     {summary.get('requested', '?')} 道")
-    print(f"  成功:     {GREEN}{summary.get('completed', 0)}{RESET}")
-    print(f"  失败:     {RED}{summary.get('failed', 0)}{RESET}")
-    print(f"  模板数:   {summary.get('template_count', '?')}")
+    print(f"  Status:     {status_icon}")
+    print(f"  Source:     {summary.get('source', '?')}")
+    print(f"  Requested:     {summary.get('requested', '?')} questions")
+    print(f"  Completed:     {GREEN}{summary.get('completed', 0)}{RESET}")
+    print(f"  Failed:     {RED}{summary.get('failed', 0)}{RESET}")
+    print(f"  Template count:   {summary.get('template_count', '?')}")
 
     batch_dir = summary.get("batch_dir")
     if batch_dir:
-        print(f"  输出目录: {CYAN}{batch_dir}{RESET}")
+        print(f"  Output directory: {CYAN}{batch_dir}{RESET}")
 
     results = summary.get("results", []) or []
     if results:
-        print(f"\n  {BOLD}题目预览:{RESET}")
+        print(f"\n  {BOLD}Question preview:{RESET}")
         for i, item in enumerate(results, 1):
             qa = item.get("qa_pair", {})
             approved = item.get("success", False)
@@ -266,7 +266,7 @@ def _print_summary(summary: dict[str, Any]) -> None:
                 tools_used.append("code")
             tool_str = f" {DIM}[{', '.join(tools_used)}]{RESET}" if tools_used else ""
 
-            print(f"  {icon} {i}. [{q_type}]{tool_str} {DIM}({attempts}次){RESET}")
+            print(f"  {icon} {i}. [{q_type}]{tool_str} {DIM}({attempts} attempts){RESET}")
             print(f"     {question}...")
 
     print()
@@ -280,7 +280,7 @@ def _display_question(idx: int, qa: dict[str, Any]) -> None:
     question_text = qa.get("question", "")
     options = qa.get("options") or {}
 
-    print(f"\n  {BOLD}题目 {idx}{RESET}  [{q_type}]")
+    print(f"\n  {BOLD}Question {idx}{RESET}  [{q_type}]")
     print(_hr())
     print(f"  {question_text}")
 
@@ -314,14 +314,14 @@ async def _run_answer_session(summary: dict[str, Any]) -> None:
     results = summary.get("results", []) or []
     approved_results = [r for r in results if r.get("success")]
     if not approved_results:
-        print(f"  {YELLOW}没有可用的题目进行作答。{RESET}")
+        print(f"  {YELLOW}No available questions to answer.{RESET}")
         return
 
     batch_dir = summary.get("batch_dir", "")
     trace_id = Path(batch_dir).name if batch_dir else ""
 
-    _header(f"答题环节 ({len(approved_results)} 道题)")
-    print(f"  {DIM}直接回车可跳过该题，输入 /quit 退出答题{RESET}\n")
+    _header(f"Answering Session ({len(approved_results)} questions)")
+    print(f"  {DIM}Press Enter to skip this question, or type /quit to exit the session.{RESET}\n")
 
     answers_recorded = 0
     correct_count = 0
@@ -337,43 +337,43 @@ async def _run_answer_session(summary: dict[str, Any]) -> None:
         _display_question(i, qa)
 
         try:
-            user_input = input(f"  {ARROW} 你的回答: ").strip()
+            user_input = input(f"  {ARROW} Your answer: ").strip()
         except (EOFError, KeyboardInterrupt):
-            print(f"\n  {YELLOW}答题中断。{RESET}")
+            print(f"\n  {YELLOW}Answering interrupted.{RESET}")
             break
 
         if user_input.lower() in ("/quit", "/exit", "/q"):
-            print(f"  {DIM}退出答题。{RESET}")
+            print(f"  {DIM}Exiting answer session.{RESET}")
             break
 
         if not user_input:
             skipped_count += 1
-            print(f"  {DIM}(已跳过){RESET}")
+            print(f"  {DIM}(skipped){RESET}")
             continue
 
         judged = _judge_answer(user_input, correct_answer, q_type)
 
         if judged == "correct":
-            print(f"  {CHECK} {GREEN}正确！{RESET}")
+            print(f"  {CHECK} {GREEN}Correct!{RESET}")
             correct_count += 1
         elif judged == "wrong":
-            print(f"  {CROSS} {RED}错误{RESET}  正确答案: {GREEN}{correct_answer}{RESET}")
+            print(f"  {CROSS} {RED}Incorrect{RESET}  Correct answer: {GREEN}{correct_answer}{RESET}")
             wrong_count += 1
         elif judged == "partial":
-            print(f"  {YELLOW}~ 部分匹配{RESET}  参考答案: {correct_answer}")
+            print(f"  {YELLOW}~ Partial match{RESET}  Reference answer: {correct_answer}")
         elif judged == "skipped":
             skipped_count += 1
-            print(f"  {DIM}(已跳过){RESET}")
+            print(f"  {DIM}(skipped){RESET}")
             continue
         else:
-            print(f"  {YELLOW}? 待判定{RESET}  参考答案: {correct_answer}")
+            print(f"  {YELLOW}? Pending review{RESET}  Reference answer: {correct_answer}")
 
         explanation = qa.get("explanation", "")
         if explanation:
             short_exp = explanation[:200]
             if len(explanation) > 200:
                 short_exp += "..."
-            print(f"  {DIM}解析: {short_exp}{RESET}")
+            print(f"  {DIM}Explanation: {short_exp}{RESET}")
 
         # Record to PersonalizationService
         if trace_id:
@@ -394,7 +394,7 @@ async def _run_answer_session(summary: dict[str, Any]) -> None:
 
     # Flush trace + run memory agents once with the complete trace
     if answers_recorded > 0 and trace_id:
-        print(f"\n  {DIM}同步答题记忆...{RESET}", end="", flush=True)
+        print(f"\n  {DIM}Syncing answer memory...{RESET}", end="", flush=True)
         await _flush_events()
         try:
             from src.personalization.service import get_personalization_service
@@ -405,14 +405,14 @@ async def _run_answer_session(summary: dict[str, Any]) -> None:
         print(f" {CHECK}")
 
     # Print answer session summary
-    _header("答题结果")
+    _header("Answer Results")
     total = correct_count + wrong_count + skipped_count
-    print(f"  总计:   {total} 题")
-    print(f"  正确:   {GREEN}{correct_count}{RESET}")
-    print(f"  错误:   {RED}{wrong_count}{RESET}")
-    print(f"  跳过:   {DIM}{skipped_count}{RESET}")
+    print(f"  Total:   {total}")
+    print(f"  Correct:   {GREEN}{correct_count}{RESET}")
+    print(f"  Incorrect:   {RED}{wrong_count}{RESET}")
+    print(f"  Skipped:   {DIM}{skipped_count}{RESET}")
     if answers_recorded > 0:
-        print(f"  {CHECK} 已记录 {answers_recorded} 条答题记录到记忆系统")
+        print(f"  {CHECK} Recorded {answers_recorded} answer records to the memory system")
     print()
 
 
@@ -440,12 +440,12 @@ def _build_coordinator(
 # ── Mode runners ──────────────────────────────────────────────────────
 
 async def _run_topic_mode(coordinator: AgentCoordinator) -> None:
-    _header("Topic 模式")
-    user_topic = _prompt_non_empty("主题 (如: Lagrange multipliers)")
-    preference = input(f"  偏好 (可留空): ").strip()
-    num_questions = _prompt_int("题目数量", 3)
+    _header("Topic Mode")
+    user_topic = _prompt_non_empty("Topic (e.g. Lagrange multipliers)")
+    preference = input(f"  Preference (optional): ").strip()
+    num_questions = _prompt_int("Number of questions", 3)
 
-    print(f"\n  {ARROW} 开始生成 {BOLD}{num_questions}{RESET} 道题...")
+    print(f"\n  {ARROW} Generating {BOLD}{num_questions}{RESET} questions...")
     print(_hr())
 
     coordinator.set_ws_callback(_cli_progress)
@@ -456,7 +456,7 @@ async def _run_topic_mode(coordinator: AgentCoordinator) -> None:
     )
 
     # Wait for memory system to process the generation event
-    print(f"  {DIM}同步记忆系统...{RESET}", end="", flush=True)
+    print(f"  {DIM}Syncing memory system...{RESET}", end="", flush=True)
     await _flush_events()
     print(f" {CHECK}")
 
@@ -466,7 +466,7 @@ async def _run_topic_mode(coordinator: AgentCoordinator) -> None:
     approved = [r for r in (summary.get("results") or []) if r.get("success")]
     if approved:
         try:
-            choice = input(f"  {ARROW} 是否开始答题? (y/n) [{DIM}y{RESET}]: ").strip().lower()
+            choice = input(f"  {ARROW} Start answering? (y/n) [{DIM}y{RESET}]: ").strip().lower()
         except (EOFError, KeyboardInterrupt):
             choice = "n"
         if choice != "n":
@@ -474,20 +474,20 @@ async def _run_topic_mode(coordinator: AgentCoordinator) -> None:
 
 
 async def _run_mimic_mode(coordinator: AgentCoordinator) -> None:
-    _header("Mimic 模式")
-    mode = _prompt_non_empty("输入模式 [upload/parsed]", "parsed").lower()
+    _header("Mimic Mode")
+    mode = _prompt_non_empty("Input mode [upload/parsed]", "parsed").lower()
     if mode not in {"upload", "parsed"}:
-        print(f"  {YELLOW}无效模式，使用 parsed。{RESET}")
+        print(f"  {YELLOW}Invalid mode, using parsed.{RESET}")
         mode = "parsed"
 
     if mode == "upload":
-        exam_path = _prompt_non_empty("PDF 路径")
+        exam_path = _prompt_non_empty("PDF path")
     else:
-        exam_path = _prompt_non_empty("已解析试卷目录路径")
+        exam_path = _prompt_non_empty("Parsed exam directory path")
 
-    max_questions = _prompt_int("最大题目数", 5)
+    max_questions = _prompt_int("Maximum question count", 5)
 
-    print(f"\n  {ARROW} 开始解析并生成...")
+    print(f"\n  {ARROW} Starting parsing and generation...")
     print(_hr())
 
     coordinator.set_ws_callback(_cli_progress)
@@ -498,7 +498,7 @@ async def _run_mimic_mode(coordinator: AgentCoordinator) -> None:
     )
 
     # Wait for memory system to process the generation event
-    print(f"  {DIM}同步记忆系统...{RESET}", end="", flush=True)
+    print(f"  {DIM}Syncing memory system...{RESET}", end="", flush=True)
     await _flush_events()
     print(f" {CHECK}")
 
@@ -508,7 +508,7 @@ async def _run_mimic_mode(coordinator: AgentCoordinator) -> None:
     approved = [r for r in (summary.get("results") or []) if r.get("success")]
     if approved:
         try:
-            choice = input(f"  {ARROW} 是否开始答题? (y/n) [{DIM}y{RESET}]: ").strip().lower()
+            choice = input(f"  {ARROW} Start answering? (y/n) [{DIM}y{RESET}]: ").strip().lower()
         except (EOFError, KeyboardInterrupt):
             choice = "n"
         if choice != "n":
@@ -523,18 +523,18 @@ async def main() -> None:
     print(f"{BOLD}{'=' * 70}{RESET}")
 
     # Start PersonalizationService for memory recording
-    print(f"  {DIM}正在初始化记忆系统...{RESET}", end="", flush=True)
+    print(f"  {DIM}Initializing memory system...{RESET}", end="", flush=True)
     mem_ok = await _ensure_personalization()
     print(f" {CHECK}" if mem_ok else f" {CROSS}")
 
     kb_name = _select_kb()
-    language = _prompt_non_empty("语言 [en/zh]", "zh").lower()
+    language = _prompt_non_empty("Language [en/zh]", "zh").lower()
     if language not in {"en", "zh"}:
-        print(f"  {YELLOW}语言无效，使用 zh。{RESET}")
+        print(f"  {YELLOW}Invalid language, using zh.{RESET}")
         language = "zh"
 
     default_output = str(PROJECT_ROOT / "data" / "user" / "question")
-    output_dir = _prompt_non_empty(f"输出目录", default_output)
+    output_dir = _prompt_non_empty(f"Output directory", default_output)
 
     coordinator = _build_coordinator(
         kb_name=kb_name,
@@ -542,13 +542,13 @@ async def main() -> None:
         language=language,
     )
 
-    print(f"\n  {DIM}配置: KB={kb_name}, 语言={language}, 输出={output_dir}{RESET}")
+    print(f"\n  {DIM}Configuration: KB={kb_name}, language={language}, output={output_dir}{RESET}")
 
     while True:
-        print(f"\n  {BOLD}请选择模式:{RESET}")
-        print(f"    {CYAN}1{RESET}) Topic 模式 — 基于主题生成")
-        print(f"    {CYAN}2{RESET}) Mimic 模式 — 基于试卷仿题")
-        print(f"    {CYAN}q{RESET}) 退出")
+        print(f"\n  {BOLD}Select a mode:{RESET}")
+        print(f"    {CYAN}1{RESET}) Topic Mode - generate from a topic")
+        print(f"    {CYAN}2{RESET}) Mimic Mode - mimic an exam paper")
+        print(f"    {CYAN}q{RESET}) Exit")
         choice = input(f"  {ARROW} ").strip().lower()
 
         try:
@@ -557,14 +557,14 @@ async def main() -> None:
             elif choice == "2":
                 await _run_mimic_mode(coordinator)
             elif choice in {"q", "quit", "exit"}:
-                print(f"\n  {DIM}已退出。{RESET}\n")
+                print(f"\n  {DIM}Exited.{RESET}\n")
                 break
             else:
-                print(f"  {RED}无效输入，请重试。{RESET}")
+                print(f"  {RED}Invalid input, please try again.{RESET}")
         except KeyboardInterrupt:
-            print(f"\n  {YELLOW}已中断当前任务。{RESET}")
+            print(f"\n  {YELLOW}The current task has been interrupted.{RESET}")
         except Exception as exc:
-            print(f"\n  {RED}运行失败: {exc}{RESET}")
+            print(f"\n  {RED}Run failed: {exc}{RESET}")
             import traceback
             traceback.print_exc()
 

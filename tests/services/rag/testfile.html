@@ -1,94 +1,94 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>深度学习基础 - 测试文档</title>
+    <title>Deep Learning Basics - Test Document</title>
 </head>
 <body>
     <header>
-        <h1>深度学习基础教程</h1>
-        <p>本文档用于RAG管道测试</p>
+        <h1>Deep Learning Basics Tutorial</h1>
+        <p>This document is used for RAG pipeline testing.</p>
     </header>
 
     <main>
         <article>
-            <h2>什么是深度学习？</h2>
-            <p>深度学习（Deep Learning）是机器学习的一个分支，它使用多层神经网络来学习数据的层次化表示。深度学习在图像识别、自然语言处理和语音识别等领域取得了突破性进展。</p>
+            <h2>What is deep learning?</h2>
+            <p>Deep learning is a branch of machine learning that uses multi-layer neural networks to learn hierarchical representations of data. It has achieved major breakthroughs in areas such as image recognition, natural language processing, and speech recognition.</p>
 
-            <h3>神经网络的基本组成</h3>
+            <h3>Basic components of a neural network</h3>
             <ul>
-                <li><strong>输入层</strong>：接收原始数据</li>
-                <li><strong>隐藏层</strong>：进行特征提取和转换</li>
-                <li><strong>输出层</strong>：产生最终预测结果</li>
+                <li><strong>Input layer</strong>: Receives raw input data</li>
+                <li><strong>Hidden layers</strong>: Perform feature extraction and transformation</li>
+                <li><strong>Output layer</strong>: Produces the final prediction</li>
             </ul>
 
-            <h3>常见的深度学习模型</h3>
+            <h3>Common deep learning models</h3>
             <table border="1">
                 <thead>
                     <tr>
-                        <th>模型类型</th>
-                        <th>主要应用</th>
-                        <th>特点</th>
+                        <th>Model type</th>
+                        <th>Main applications</th>
+                        <th>Key characteristics</th>
                     </tr>
                 </thead>
                 <tbody>
                     <tr>
-                        <td>卷积神经网络 (CNN)</td>
-                        <td>图像分类、目标检测</td>
-                        <td>局部感受野、参数共享</td>
+                        <td>Convolutional Neural Network (CNN)</td>
+                        <td>Image classification, object detection</td>
+                        <td>Local receptive fields, parameter sharing</td>
                     </tr>
                     <tr>
-                        <td>循环神经网络 (RNN)</td>
-                        <td>序列建模、时间序列预测</td>
-                        <td>处理变长序列、记忆功能</td>
+                        <td>Recurrent Neural Network (RNN)</td>
+                        <td>Sequence modeling, time-series forecasting</td>
+                        <td>Handles variable-length sequences, supports memory</td>
                     </tr>
                     <tr>
                         <td>Transformer</td>
-                        <td>自然语言处理、大语言模型</td>
-                        <td>自注意力机制、并行计算</td>
+                        <td>Natural language processing, large language models</td>
+                        <td>Self-attention, parallel computation</td>
                     </tr>
                 </tbody>
             </table>
 
-            <h2>深度学习的训练过程</h2>
+            <h2>The deep learning training process</h2>
             <ol>
-                <li>数据预处理：清洗、归一化、数据增强</li>
-                <li>前向传播：计算预测值</li>
-                <li>损失计算：比较预测值与真实值</li>
-                <li>反向传播：计算梯度</li>
-                <li>参数更新：使用优化器更新权重</li>
+                <li>Data preprocessing: cleaning, normalization, data augmentation</li>
+                <li>Forward pass: compute predictions</li>
+                <li>Loss computation: compare predictions with ground truth</li>
+                <li>Backpropagation: compute gradients</li>
+                <li>Parameter update: update weights with an optimizer</li>
             </ol>
 
-            <h3>常用激活函数</h3>
-            <p>激活函数为神经网络引入非线性，常用的激活函数包括：</p>
+            <h3>Common activation functions</h3>
+            <p>Activation functions introduce nonlinearity into neural networks. Common choices include:</p>
             <ul>
                 <li><code>ReLU</code>: f(x) = max(0, x)</li>
                 <li><code>Sigmoid</code>: f(x) = 1 / (1 + e^(-x))</li>
                 <li><code>Tanh</code>: f(x) = (e^x - e^(-x)) / (e^x + e^(-x))</li>
-                <li><code>Softmax</code>: 用于多分类问题的输出层</li>
+                <li><code>Softmax</code>: used in the output layer for multi-class classification</li>
             </ul>
 
             <blockquote>
-                <p>"深度学习的成功在于其能够自动学习特征表示，而无需人工设计特征。"</p>
-                <footer>—— Yann LeCun, Geoffrey Hinton, Yoshua Bengio</footer>
+                <p>"The success of deep learning lies in its ability to learn feature representations automatically without manual feature engineering."</p>
+                <footer>&mdash; Yann LeCun, Geoffrey Hinton, Yoshua Bengio</footer>
             </blockquote>
         </article>
 
         <aside>
-            <h3>相关资源</h3>
+            <h3>Related resources</h3>
             <nav>
                 <ul>
-                    <li><a href="https://pytorch.org">PyTorch 官方文档</a></li>
-                    <li><a href="https://tensorflow.org">TensorFlow 官方文档</a></li>
-                    <li><a href="https://keras.io">Keras 教程</a></li>
+                    <li><a href="https://pytorch.org">PyTorch official documentation</a></li>
+                    <li><a href="https://tensorflow.org">TensorFlow official documentation</a></li>
+                    <li><a href="https://keras.io">Keras tutorial</a></li>
                 </ul>
             </nav>
         </aside>
     </main>
 
     <footer>
-        <p>© 2024 DeepTutor 测试文件 | 仅用于单元测试</p>
+        <p>© 2024 DeepTutor test file | for unit tests only</p>
     </footer>
 </body>
 </html>
