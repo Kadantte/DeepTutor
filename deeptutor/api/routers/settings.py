@@ -102,7 +102,20 @@ def _provider_choices() -> dict[str, list[dict[str, str]]]:
     from deeptutor.services.provider_registry import PROVIDERS
 
     llm = sorted(
-        [{"value": s.name, "label": s.label, "base_url": s.default_api_base} for s in PROVIDERS],
+        [
+            {
+                "value": s.name,
+                "label": (
+                    "Custom (OpenAI API)"
+                    if s.name == "custom"
+                    else "Custom (Anthropic API)"
+                    if s.name == "custom_anthropic"
+                    else s.label
+                ),
+                "base_url": s.default_api_base,
+            }
+            for s in PROVIDERS
+        ],
         key=lambda p: p["label"].lower(),
     )
     embedding = sorted(
@@ -114,6 +127,7 @@ def _provider_choices() -> dict[str, list[dict[str, str]]]:
                 "default_dim": str(spec.default_dim) if spec.default_dim else "",
             }
             for name, spec in EMBEDDING_PROVIDERS.items()
+            if name != "custom_openai_sdk"
         ],
         key=lambda p: p["label"].lower(),
     )
