@@ -23,7 +23,7 @@ data/user/
 """
 
 from pathlib import Path
-from typing import Literal
+from typing import Literal, cast
 
 AgentModule = Literal[
     "solve",
@@ -55,7 +55,12 @@ WorkspaceFeature = Literal[
 
 
 class PathService:
-    """Singleton runtime path manager rooted at ``data/user``."""
+    """Runtime path manager rooted at a workspace root.
+
+    The default root is the historical ``data/`` directory.  The optional
+    multi-user layer instantiates this class with ``multi-user/<uid>/`` so the
+    public API can stay the same while disk writes become scoped per user.
+    """
 
     _instance: "PathService | None" = None
 
@@ -70,19 +75,10 @@ class PathService:
     }
     _PRIVATE_SUFFIXES = {".json", ".sqlite", ".db", ".md", ".yaml", ".yml", ".py", ".log"}
 
-    def __new__(cls) -> "PathService":
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
-
-    def __init__(self):
-        if self._initialized:
-            return
-
+    def __init__(self, workspace_root: Path | None = None):
         self._project_root = Path(__file__).resolve().parent.parent.parent
-        self._user_data_dir = (self._project_root / "data" / "user").resolve()
-        self._initialized = True
+        self._workspace_root = (workspace_root or self._project_root / "data").resolve()
+        self._user_data_dir = (self._workspace_root / "user").resolve()
 
     @classmethod
     def get_instance(cls) -> "PathService":
@@ -102,8 +98,15 @@ class PathService:
     def user_data_dir(self) -> Path:
         return self._user_data_dir
 
+    @property
+    def workspace_root(self) -> Path:
+        return self._workspace_root
+
     def get_user_root(self) -> Path:
         return self._user_data_dir
+
+    def get_knowledge_bases_root(self) -> Path:
+        return self._workspace_root / "knowledge_bases"
 
     def get_chat_history_db(self) -> Path:
         return self._user_data_dir / "chat_history.db"
@@ -133,10 +136,18 @@ class PathService:
         if parts[:3] == ("workspace", "co-writer", "audio"):
             return True
 
-        if len(parts) >= 5 and parts[:3] == ("workspace", "chat", "deep_solve") and "artifacts" in parts[4:]:
+        if (
+            len(parts) >= 5
+            and parts[:3] == ("workspace", "chat", "deep_solve")
+            and "artifacts" in parts[4:]
+        ):
             return True
 
-        if len(parts) >= 5 and parts[:3] == ("workspace", "chat", "math_animator") and "artifacts" in parts[4:]:
+        if (
+            len(parts) >= 5
+            and parts[:3] == ("workspace", "chat", "math_animator")
+            and "artifacts" in parts[4:]
+        ):
             return True
 
         if len(parts) >= 5 and parts[:2] == ("workspace", "chat") and "code_runs" in parts[3:]:
@@ -181,26 +192,33 @@ class PathService:
         return session_root / session_id
 
     def _resolve_feature_root(self, feature: str) -> Path:
-        if feature in {"chat", "deep_solve", "deep_question", "deep_research", "math_animator", "_detached_code_execution"}:
-            return self.get_chat_feature_dir(feature)  # type: ignore[arg-type]
+        if feature in {
+            "chat",
+            "deep_solve",
+            "deep_question",
+            "deep_research",
+            "math_animator",
+            "_detached_code_execution",
+        }:
+            return self.get_chat_feature_dir(cast(ChatWorkspaceFeature, feature))
         if feature in {"memory", "notebook", "co-writer", "book"}:
-            return self.get_workspace_feature_dir(feature)  # type: ignore[arg-type]
+            return self.get_workspace_feature_dir(cast(WorkspaceFeature, feature))
         raise ValueError(f"Unknown workspace feature: {feature}")
 
     def get_agent_base_dir(self) -> Path:
         return self.get_workspace_dir()
 
-    def get_agent_dir(self, module: AgentModule) -> Path:
+    def get_agent_dir(self, module: str) -> Path:
         if module == "logs":
             return self.get_logs_dir()
         root_name, child_name = self._AGENT_TO_WORKSPACE[module]
-        base = self.get_workspace_feature_dir(root_name)  # type: ignore[arg-type]
+        base = self.get_workspace_feature_dir(cast(WorkspaceFeature, root_name))
         return base / child_name if child_name else base
 
-    def get_session_file(self, module: AgentModule) -> Path:
+    def get_session_file(self, module: str) -> Path:
         return self.get_agent_dir(module) / "sessions.json"
 
-    def get_task_dir(self, module: AgentModule, task_id: str) -> Path:
+    def get_task_dir(self, module: str, task_id: str) -> Path:
         return self.get_agent_dir(module) / task_id
 
     def get_notebook_dir(self) -> Path:
@@ -213,15 +231,16 @@ class PathService:
         return self.get_notebook_dir() / "notebooks_index.json"
 
     def get_memory_dir(self) -> Path:
-        new_dir = self.project_root / "data" / "memory"
+        new_dir = self.workspace_root / "memory"
         old_dir = self.get_workspace_feature_dir("memory")
-        if old_dir.exists() and not new_dir.exists():
+        if self.workspace_root == (self.project_root / "data").resolve() and old_dir.exists():
             new_dir.mkdir(parents=True, exist_ok=True)
             for f in old_dir.iterdir():
                 if f.is_file() and f.suffix == ".md":
                     target = new_dir / f.name
                     if not target.exists():
                         import shutil
+
                         shutil.copy2(f, target)
         return new_dir
 
@@ -322,12 +341,12 @@ class PathService:
     def get_logs_dir(self) -> Path:
         return self.get_user_root() / "logs"
 
-    def ensure_agent_dir(self, module: AgentModule) -> Path:
+    def ensure_agent_dir(self, module: str) -> Path:
         path = self.get_agent_dir(module)
         path.mkdir(parents=True, exist_ok=True)
         return path
 
-    def ensure_task_dir(self, module: AgentModule, task_id: str) -> Path:
+    def ensure_task_dir(self, module: str, task_id: str) -> Path:
         path = self.get_task_dir(module, task_id)
         path.mkdir(parents=True, exist_ok=True)
         return path
@@ -358,24 +377,32 @@ class PathService:
         self.ensure_memory_dir()
         self.ensure_notebook_dir()
         self.get_logs_dir().mkdir(parents=True, exist_ok=True)
-        for feature in ("co-writer", "book"):
-            self.get_workspace_feature_dir(feature).mkdir(parents=True, exist_ok=True)
-        for feature in (
-            "chat",
-            "deep_solve",
-            "deep_question",
-            "deep_research",
-            "math_animator",
-            "_detached_code_execution",
+        for workspace_feature in cast(tuple[WorkspaceFeature, ...], ("co-writer", "book")):
+            self.get_workspace_feature_dir(workspace_feature).mkdir(parents=True, exist_ok=True)
+        for chat_feature in cast(
+            tuple[ChatWorkspaceFeature, ...],
+            (
+                "chat",
+                "deep_solve",
+                "deep_question",
+                "deep_research",
+                "math_animator",
+                "_detached_code_execution",
+            ),
         ):
-            self.get_chat_feature_dir(feature).mkdir(parents=True, exist_ok=True)
+            self.get_chat_feature_dir(chat_feature).mkdir(parents=True, exist_ok=True)
         self.get_co_writer_tool_calls_dir().mkdir(parents=True, exist_ok=True)
         self.get_co_writer_audio_dir().mkdir(parents=True, exist_ok=True)
         self.get_research_reports_dir().mkdir(parents=True, exist_ok=True)
 
 
 def get_path_service() -> PathService:
-    return PathService.get_instance()
+    try:
+        from deeptutor.multi_user.paths import get_current_path_service
+
+        return get_current_path_service()
+    except Exception:
+        return PathService.get_instance()
 
 
 __all__ = [

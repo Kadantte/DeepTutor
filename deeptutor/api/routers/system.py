@@ -9,6 +9,7 @@ import time
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+from deeptutor.multi_user.context import get_current_user
 from deeptutor.services.config import resolve_search_runtime_config
 from deeptutor.services.embedding import get_embedding_client, get_embedding_config
 from deeptutor.services.llm import complete as llm_complete
@@ -130,6 +131,14 @@ async def get_system_status():
         result["search"]["status"] = "error"
         result["search"]["error"] = str(e)
 
+    # Non-admin users have no need to know which model the admin configured;
+    # exposing the name leaks operational detail and would let curious users
+    # fingerprint the deployment. Strip the identifying fields.
+    if not get_current_user().is_admin:
+        for section in ("llm", "embeddings"):
+            result[section].pop("model", None)
+        result["search"].pop("provider", None)
+
     return result
 
 
@@ -218,13 +227,19 @@ async def test_embeddings_connection():
         model = embedding_config.model
         binding = embedding_config.binding
 
-        # Send a minimal test request using unified client
-        test_texts = ["test"]
+        # Probe a tiny batch so "connection OK" also exercises the path RAG
+        # uses for multi-chunk indexing.
+        test_texts = ["test", "retrieval batch probe"]
         embeddings = await embedding_client.embed(test_texts)
 
         response_time = (time.time() - start_time) * 1000
 
-        if embeddings is not None and len(embeddings) > 0 and len(embeddings[0]) > 0:
+        if (
+            embeddings is not None
+            and len(embeddings) == len(test_texts)
+            and all(len(vector) > 0 for vector in embeddings)
+            and len({len(vector) for vector in embeddings}) == 1
+        ):
             return TestResponse(
                 success=True,
                 message=f"Embeddings connection successful ({binding} provider)",
@@ -233,9 +248,9 @@ async def test_embeddings_connection():
             )
         return TestResponse(
             success=False,
-            message="Embeddings connection failed: Empty response",
+            message="Embeddings connection failed: Invalid response",
             model=model,
-            error="Empty embedding vector",
+            error="Embedding response must contain one non-empty vector per input",
         )
 
     except ValueError as e:
@@ -291,7 +306,9 @@ async def test_search_connection():
         )
 
     except ValueError as e:
-        return TestResponse(success=False, message=f"Search configuration error: {e!s}", error=str(e))
+        return TestResponse(
+            success=False, message=f"Search configuration error: {e!s}", error=str(e)
+        )
     except Exception as e:
         response_time = (time.time() - start_time) * 1000
         return TestResponse(

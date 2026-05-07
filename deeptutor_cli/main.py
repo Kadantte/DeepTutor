@@ -1,8 +1,10 @@
 """CLI entry point for the standalone ``deeptutor-cli`` package."""
 
 from __future__ import annotations
+
 import typer
 
+from deeptutor.logging import configure_logging
 from deeptutor.runtime.mode import RunMode, set_mode
 from deeptutor.services.setup import get_backend_port
 
@@ -19,6 +21,7 @@ from .provider_cmd import register as register_provider
 from .session_cmd import register as register_session
 
 set_mode(RunMode.CLI)
+configure_logging()
 
 app = typer.Typer(
     name="deeptutor",
@@ -63,7 +66,10 @@ register_book(book_app)
 
 @app.command("run")
 def run_capability(
-    capability: str = typer.Argument(..., help="Capability name (e.g. chat, deep_solve, deep_question, deep_research, math_animator)."),
+    capability: str = typer.Argument(
+        ...,
+        help="Capability name (e.g. chat, deep_solve, deep_question, deep_research, math_animator).",
+    ),
     message: str = typer.Argument(..., help="Message to send."),
     session: str | None = typer.Option(None, "--session", help="Existing session id."),
     tool: list[str] = typer.Option([], "--tool", "-t", help="Enabled tool(s)."),
@@ -72,11 +78,14 @@ def run_capability(
     history_ref: list[str] = typer.Option([], "--history-ref", help="Referenced session ids."),
     language: str = typer.Option("en", "--language", "-l", help="Response language."),
     config: list[str] = typer.Option([], "--config", help="Capability config key=value."),
-    config_json: str | None = typer.Option(None, "--config-json", help="Capability config as JSON."),
+    config_json: str | None = typer.Option(
+        None, "--config-json", help="Capability config as JSON."
+    ),
     fmt: str = typer.Option("rich", "--format", "-f", help="Output format: rich | json."),
 ) -> None:
     """Run any capability in a single turn (agent-first entry point)."""
     from deeptutor.app import DeepTutorApp
+
     from .common import run_turn_and_render
 
     request = build_turn_request(
@@ -117,7 +126,7 @@ def serve(
     except ImportError:
         console.print(
             "[bold red]Error:[/] API server dependencies not installed.\n"
-            "Run: pip install -r requirements/server.txt"
+            "Run: pip install -e '.[server]'"
         )
         raise typer.Exit(code=1)
 

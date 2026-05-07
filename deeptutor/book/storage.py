@@ -21,19 +21,19 @@ Layout (relative to ``data/user/workspace/book/``)::
 from __future__ import annotations
 
 import asyncio
-import json
-import os
-import shutil
 from datetime import datetime
+import json
+import logging
+import os
 from pathlib import Path
+import shutil
 from typing import Any
 
-from deeptutor.logging import get_logger
 from deeptutor.services.path_service import get_path_service
 
 from .models import Book, BookInputs, ExplorationReport, Page, Progress, Spine
 
-logger = get_logger("book.storage")
+logger = logging.getLogger(__name__)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -98,7 +98,7 @@ class BookStorage:
         ids = []
         for child in root.iterdir():
             if child.is_dir() and child.name.startswith("book_"):
-                ids.append(child.name[len("book_"):])
+                ids.append(child.name[len("book_") :])
         return ids
 
     def book_exists(self, book_id: str) -> bool:
@@ -167,9 +167,7 @@ class BookStorage:
     def save_exploration(self, book_id: str, report: ExplorationReport) -> None:
         self.ensure_book_root(book_id)
         report.book_id = report.book_id or book_id
-        _atomic_write_json(
-            self._exploration_path(book_id), report.model_dump(mode="json")
-        )
+        _atomic_write_json(self._exploration_path(book_id), report.model_dump(mode="json"))
 
     def load_exploration(self, book_id: str) -> ExplorationReport | None:
         data = _read_json(self._exploration_path(book_id))

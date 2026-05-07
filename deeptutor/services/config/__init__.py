@@ -1,10 +1,13 @@
 """Configuration helpers backed by runtime YAML and the project `.env` file."""
 
+import importlib
+
 from .env_store import ConfigSummary, EnvStore, get_env_store
 from .knowledge_base_config import (
     KnowledgeBaseConfigService,
     get_kb_config_service,
 )
+from .launch_settings import LaunchSettings, load_launch_settings
 from .loader import (
     DEFAULT_CHAT_PARAMS,
     PROJECT_ROOT,
@@ -18,10 +21,16 @@ from .loader import (
 )
 from .model_catalog import ModelCatalogService, get_model_catalog_service
 
+# Re-export the loader module itself for code paths that monkeypatch via the
+# package namespace, e.g. ``deeptutor.services.config.loader.PROJECT_ROOT``.
+loader = importlib.import_module(f"{__name__}.loader")
+
 __all__ = [
     "ConfigSummary",
     "EnvStore",
     "get_env_store",
+    "LaunchSettings",
+    "load_launch_settings",
     # From loader.py
     "PROJECT_ROOT",
     "get_runtime_settings_dir",
@@ -67,14 +76,10 @@ def __getattr__(name: str):
         "resolve_search_runtime_config",
         "search_provider_state",
     }:
-        import importlib
-
         provider_runtime = importlib.import_module(f"{__name__}.provider_runtime")
 
         return getattr(provider_runtime, name)
     if name in {"ConfigTestRunner", "TestRun", "get_config_test_runner"}:
-        import importlib
-
         test_runner = importlib.import_module(f"{__name__}.test_runner")
         return getattr(test_runner, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

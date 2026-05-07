@@ -5,19 +5,28 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useReducer,
   useRef,
 } from "react";
 import {
+  LANGUAGE_EVENT,
+  LANGUAGE_STORAGE_KEY,
+  normalizeLanguage,
   readStoredLanguage,
   writeStoredActiveSessionId,
 } from "@/context/app-shell-storage";
-import type { StreamEvent, ChatMessage } from "@/lib/unified-ws";
+import type { StreamEvent, ChatMessage, LLMSelection } from "@/lib/unified-ws";
 import { UnifiedWSClient } from "@/lib/unified-ws";
 import { getSession, type SessionMessage } from "@/lib/session-api";
 import { normalizeMarkdownForDisplay } from "@/lib/markdown-display";
+import { normalizeMessageContent } from "@/lib/message-content";
 import { shouldAppendEventContent } from "@/lib/stream";
+import {
+  normalizeBookReferences,
+  type BookReferencePayload,
+} from "@/lib/book-references";
 
 type SessionRuntimeStatus =
   | "idle"
@@ -44,10 +53,13 @@ type HistoryReferencePayload = string[];
 
 type QuestionNotebookReferencePayload = number[];
 
+type MemoryReferencePayload = Array<"summary" | "profile">;
+
 export interface SendMessageOptions {
   displayUserMessage?: boolean;
   persistUserMessage?: boolean;
   requestSnapshotOverride?: MessageRequestSnapshot;
+  bookReferences?: BookReferencePayload[];
 }
 
 export interface ChatState {
@@ -55,6 +67,7 @@ export interface ChatState {
   enabledTools: string[];
   activeCapability: string | null;
   knowledgeBases: string[];
+  llmSelection: LLMSelection | null;
   messages: MessageItem[];
   isStreaming: boolean;
   currentStage: string;
@@ -74,6 +87,11 @@ export interface MessageAttachment {
   base64?: string;
   url?: string;
   mime_type?: string;
+  /** Stable per-attachment id; matches the URL segment served by /api/attachments. */
+  id?: string;
+  /** Plain-text rendering of office docs, populated by the backend extractor.
+   *  Used by the preview drawer to show "what the LLM saw" for binary docs. */
+  extracted_text?: string;
 }
 
 export interface MessageRequestSnapshot {
@@ -87,7 +105,10 @@ export interface MessageRequestSnapshot {
   notebookReferences?: NotebookReferencePayload[];
   historyReferences?: HistoryReferencePayload;
   questionNotebookReferences?: QuestionNotebookReferencePayload;
+  bookReferences?: BookReferencePayload[];
   skills?: string[];
+  memoryReferences?: MemoryReferencePayload;
+  llmSelection?: LLMSelection | null;
 }
 
 export interface MessageItem {
@@ -117,6 +138,7 @@ type Action =
   | { type: "SET_TOOLS"; tools: string[] }
   | { type: "SET_CAPABILITY"; cap: string | null }
   | { type: "SET_KB"; kbs: string[] }
+  | { type: "SET_LLM_SELECTION"; selection: LLMSelection | null }
   | { type: "SET_LANGUAGE"; lang: string }
   | {
       type: "ADD_USER_MSG";
@@ -130,8 +152,18 @@ type Action =
   | { type: "RESTORE_ASSISTANT"; key: string; message: MessageItem }
   | { type: "STREAM_START"; key: string }
   | { type: "STREAM_EVENT"; key: string; event: StreamEvent }
-  | { type: "STREAM_END"; key: string; status?: SessionRuntimeStatus; turnId?: string | null }
-  | { type: "BIND_SERVER_SESSION"; key: string; sessionId: string; turnId?: string | null }
+  | {
+      type: "STREAM_END";
+      key: string;
+      status?: SessionRuntimeStatus;
+      turnId?: string | null;
+    }
+  | {
+      type: "BIND_SERVER_SESSION";
+      key: string;
+      sessionId: string;
+      turnId?: string | null;
+    }
   | {
       type: "LOAD_SESSION";
       key: string;
@@ -142,17 +174,22 @@ type Action =
       tools?: string[];
       capability?: string | null;
       knowledgeBases?: string[];
+      llmSelection?: LLMSelection | null;
       language?: string;
     }
   | { type: "NEW_SESSION"; key: string };
 
-function createSessionEntry(key: string, sessionId: string | null = null): SessionEntry {
+function createSessionEntry(
+  key: string,
+  sessionId: string | null = null,
+): SessionEntry {
   return {
     key,
     sessionId,
     enabledTools: [],
     activeCapability: null,
     knowledgeBases: [],
+    llmSelection: null,
     messages: [],
     isStreaming: false,
     currentStage: "",
@@ -205,13 +242,19 @@ function reducer(state: ProviderState, action: Action): ProviderState {
         ...session,
         knowledgeBases: action.kbs,
       }));
+    case "SET_LLM_SELECTION":
+      return updateSelectedSession(state, (session) => ({
+        ...session,
+        llmSelection: action.selection,
+      }));
     case "SET_LANGUAGE":
       return updateSelectedSession(state, (session) => ({
         ...session,
         language: action.lang,
       }));
     case "ADD_USER_MSG": {
-      const session = state.sessions[action.key] ?? createSessionEntry(action.key);
+      const session =
+        state.sessions[action.key] ?? createSessionEntry(action.key);
       return {
         ...state,
         sessions: {
@@ -224,8 +267,12 @@ function reducer(state: ProviderState, action: Action): ProviderState {
                 role: "user",
                 content: action.content,
                 capability: action.capability || "",
-                ...(action.attachments?.length ? { attachments: action.attachments } : {}),
-                ...(action.requestSnapshot ? { requestSnapshot: action.requestSnapshot } : {}),
+                ...(action.attachments?.length
+                  ? { attachments: action.attachments }
+                  : {}),
+                ...(action.requestSnapshot
+                  ? { requestSnapshot: action.requestSnapshot }
+                  : {}),
               },
             ],
             updatedAt: Date.now(),
@@ -262,7 +309,7 @@ function reducer(state: ProviderState, action: Action): ProviderState {
         messages.length > 0 &&
         messages[messages.length - 1].role === "assistant" &&
         (messages[messages.length - 1].content ?? "") === "" &&
-        ((messages[messages.length - 1].events?.length ?? 0) === 0)
+        (messages[messages.length - 1].events?.length ?? 0) === 0
       ) {
         messages.pop();
       }
@@ -294,7 +341,9 @@ function reducer(state: ProviderState, action: Action): ProviderState {
                 role: "assistant",
                 content: "",
                 events: [],
-                capability: (state.sessions[action.key] ?? createSessionEntry(action.key)).activeCapability || "",
+                capability:
+                  (state.sessions[action.key] ?? createSessionEntry(action.key))
+                    .activeCapability || "",
               },
             ],
             updatedAt: Date.now(),
@@ -302,18 +351,30 @@ function reducer(state: ProviderState, action: Action): ProviderState {
         },
       };
     case "STREAM_EVENT": {
-      const session = state.sessions[action.key] ?? createSessionEntry(action.key);
+      const session =
+        state.sessions[action.key] ?? createSessionEntry(action.key);
       const msgs = [...session.messages];
       let last = msgs[msgs.length - 1];
       if (last?.role !== "assistant") {
-        msgs.push({ role: "assistant", content: "", events: [], capability: session.activeCapability || "" });
+        msgs.push({
+          role: "assistant",
+          content: "",
+          events: [],
+          capability: session.activeCapability || "",
+        });
         last = msgs[msgs.length - 1];
       }
       const events = [...(last?.events || []), action.event];
       let content = last?.content || "";
-      if (shouldAppendEventContent(action.event)) content += action.event.content;
+      if (shouldAppendEventContent(action.event))
+        content += action.event.content;
       const capability = last?.capability || session.activeCapability || "";
-      msgs[msgs.length - 1] = { ...(last || { role: "assistant", content: "" }), content, events, capability };
+      msgs[msgs.length - 1] = {
+        ...(last || { role: "assistant", content: "" }),
+        content,
+        events,
+        capability,
+      };
       return {
         ...state,
         sessions: {
@@ -346,7 +407,9 @@ function reducer(state: ProviderState, action: Action): ProviderState {
             status: action.status ?? "completed",
             activeTurnId:
               action.status === "running"
-                ? action.turnId || state.sessions[action.key]?.activeTurnId || null
+                ? action.turnId ||
+                  state.sessions[action.key]?.activeTurnId ||
+                  null
                 : null,
             updatedAt: Date.now(),
           },
@@ -354,7 +417,8 @@ function reducer(state: ProviderState, action: Action): ProviderState {
         sidebarRefreshToken: state.sidebarRefreshToken + 1,
       };
     case "BIND_SERVER_SESSION": {
-      const current = state.sessions[action.key] ?? createSessionEntry(action.key);
+      const current =
+        state.sessions[action.key] ?? createSessionEntry(action.key);
       const targetKey = action.sessionId;
       const existing = state.sessions[targetKey];
       const merged: SessionEntry = {
@@ -371,13 +435,16 @@ function reducer(state: ProviderState, action: Action): ProviderState {
       nextSessions[targetKey] = merged;
       return {
         ...state,
-        selectedKey: state.selectedKey === action.key ? targetKey : state.selectedKey,
+        selectedKey:
+          state.selectedKey === action.key ? targetKey : state.selectedKey,
         sessions: nextSessions,
         sidebarRefreshToken: state.sidebarRefreshToken + 1,
       };
     }
     case "LOAD_SESSION": {
-      const existing = state.sessions[action.key] ?? createSessionEntry(action.key, action.sessionId);
+      const existing =
+        state.sessions[action.key] ??
+        createSessionEntry(action.key, action.sessionId);
       return {
         ...state,
         selectedKey: action.key,
@@ -389,8 +456,14 @@ function reducer(state: ProviderState, action: Action): ProviderState {
             sessionId: action.sessionId,
             enabledTools: action.tools ?? existing.enabledTools,
             activeCapability:
-              action.capability !== undefined ? action.capability : existing.activeCapability,
+              action.capability !== undefined
+                ? action.capability
+                : existing.activeCapability,
             knowledgeBases: action.knowledgeBases ?? existing.knowledgeBases,
+            llmSelection:
+              action.llmSelection !== undefined
+                ? action.llmSelection
+                : existing.llmSelection,
             messages: action.messages,
             isStreaming: (action.status || "idle") === "running",
             currentStage: "",
@@ -404,12 +477,19 @@ function reducer(state: ProviderState, action: Action): ProviderState {
     }
     case "NEW_SESSION": {
       const MAX_CACHED_SESSIONS = 20;
-      let nextSessions = { ...state.sessions, [action.key]: createSessionEntry(action.key) };
+      let nextSessions = {
+        ...state.sessions,
+        [action.key]: createSessionEntry(action.key),
+      };
       const keys = Object.keys(nextSessions);
       if (keys.length > MAX_CACHED_SESSIONS) {
         const evictable = keys
-          .filter((k) => k !== action.key && nextSessions[k].status !== "running")
-          .sort((a, b) => nextSessions[a].updatedAt - nextSessions[b].updatedAt);
+          .filter(
+            (k) => k !== action.key && nextSessions[k].status !== "running",
+          )
+          .sort(
+            (a, b) => nextSessions[a].updatedAt - nextSessions[b].updatedAt,
+          );
         const toRemove = evictable.slice(0, keys.length - MAX_CACHED_SESSIONS);
         for (const k of toRemove) delete nextSessions[k];
       }
@@ -431,6 +511,7 @@ interface ChatContextValue {
   setTools: (tools: string[]) => void;
   setCapability: (cap: string | null) => void;
   setKBs: (kbs: string[]) => void;
+  setLLMSelection: (selection: LLMSelection | null) => void;
   setLanguage: (lang: string) => void;
   sendMessage: (
     content: string,
@@ -441,6 +522,7 @@ interface ChatContextValue {
     options?: SendMessageOptions,
     questionNotebookReferences?: QuestionNotebookReferencePayload,
     skills?: string[],
+    memoryReferences?: MemoryReferencePayload,
   ) => void;
   cancelStreamingTurn: () => void;
   regenerateLastMessage: () => void;
@@ -453,7 +535,130 @@ interface ChatContextValue {
 
 const ChatCtx = createContext<ChatContextValue | null>(null);
 
-export function UnifiedChatProvider({ children }: { children: React.ReactNode }) {
+function hydrateMessageAttachments(
+  attachments: SessionMessage["attachments"],
+): MessageAttachment[] {
+  return Array.isArray(attachments)
+    ? attachments.map((item) => ({
+        type: item.type,
+        filename: item.filename,
+        base64: item.base64,
+        url: item.url,
+        mime_type: item.mime_type,
+        id: item.id,
+        extracted_text: item.extracted_text,
+      }))
+    : [];
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function asStringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter(
+        (item): item is string => typeof item === "string" && item.length > 0,
+      )
+    : [];
+}
+
+function asLLMSelection(value: unknown): LLMSelection | null {
+  const record = asRecord(value);
+  const profileId =
+    typeof record?.profile_id === "string" ? record.profile_id.trim() : "";
+  const modelId =
+    typeof record?.model_id === "string" ? record.model_id.trim() : "";
+  return profileId && modelId
+    ? { profile_id: profileId, model_id: modelId }
+    : null;
+}
+
+function asMemoryReferences(value: unknown): MemoryReferencePayload {
+  return asStringArray(value).filter(
+    (item): item is "summary" | "profile" =>
+      item === "summary" || item === "profile",
+  );
+}
+
+function asNotebookReferences(value: unknown): NotebookReferencePayload[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    const ref = asRecord(item);
+    const notebookId =
+      typeof ref?.notebook_id === "string" ? ref.notebook_id : "";
+    const recordIds = asStringArray(ref?.record_ids);
+    return notebookId && recordIds.length
+      ? [{ notebook_id: notebookId, record_ids: recordIds }]
+      : [];
+  });
+}
+
+function asQuestionReferences(
+  value: unknown,
+): QuestionNotebookReferencePayload {
+  return Array.isArray(value)
+    ? value
+        .map((item) => (typeof item === "number" ? item : Number(item)))
+        .filter((item) => Number.isInteger(item))
+    : [];
+}
+
+function hydrateRequestSnapshot(
+  message: SessionMessage,
+  content: string,
+  attachments: MessageAttachment[],
+): MessageRequestSnapshot | undefined {
+  const metadata = asRecord(message.metadata);
+  const stored = asRecord(
+    metadata?.request_snapshot ?? metadata?.requestSnapshot,
+  );
+  if (!stored) return undefined;
+
+  const snapshot: MessageRequestSnapshot = {
+    content: typeof stored.content === "string" ? stored.content : content,
+    capability:
+      typeof stored.capability === "string"
+        ? stored.capability
+        : message.capability || "",
+    enabledTools: asStringArray(stored.enabledTools),
+    knowledgeBases: asStringArray(stored.knowledgeBases),
+    language: typeof stored.language === "string" ? stored.language : "en",
+    ...(attachments.length ? { attachments } : {}),
+  };
+
+  const config = asRecord(stored.config);
+  const notebookReferences = asNotebookReferences(stored.notebookReferences);
+  const historyReferences = asStringArray(stored.historyReferences);
+  const questionNotebookReferences = asQuestionReferences(
+    stored.questionNotebookReferences,
+  );
+  const skills = asStringArray(stored.skills);
+  const memoryReferences = asMemoryReferences(stored.memoryReferences);
+  const bookReferences = normalizeBookReferences(stored.bookReferences);
+  const llmSelection = asLLMSelection(stored.llmSelection);
+
+  if (config && Object.keys(config).length) snapshot.config = config;
+  if (notebookReferences.length)
+    snapshot.notebookReferences = notebookReferences;
+  if (historyReferences.length) snapshot.historyReferences = historyReferences;
+  if (questionNotebookReferences.length) {
+    snapshot.questionNotebookReferences = questionNotebookReferences;
+  }
+  if (bookReferences.length) snapshot.bookReferences = bookReferences;
+  if (skills.length) snapshot.skills = skills;
+  if (memoryReferences.length) snapshot.memoryReferences = memoryReferences;
+  if (llmSelection) snapshot.llmSelection = llmSelection;
+  return snapshot;
+}
+
+export function UnifiedChatProvider({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const stateRef = useRef(initialState);
   const runnersRef = useRef<
@@ -472,7 +677,7 @@ export function UnifiedChatProvider({ children }: { children: React.ReactNode })
   // or ``nothing_to_regenerate``). Keyed by session entry key.
   const pendingRegenerateRef = useRef<Map<string, MessageItem>>(new Map());
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     stateRef.current = state;
   }, [state]);
 
@@ -491,30 +696,33 @@ export function UnifiedChatProvider({ children }: { children: React.ReactNode })
     return `draft_${Date.now()}_${draftCounterRef.current}`;
   }, []);
 
-  const hydrateMessages = useCallback((messages: SessionMessage[]): MessageItem[] => {
-    // System messages (e.g. quiz follow-up grounding context written by the
-    // backend turn runtime) are LLM-only and must not surface in the chat UI.
-    return messages
-      .filter((message) => message.role !== "system")
-      .map((message) => ({
-        role: message.role,
-        content:
-          message.role === "assistant"
-            ? normalizeMarkdownForDisplay(message.content)
-            : message.content,
-        capability: message.capability || "",
-        events: Array.isArray(message.events) ? message.events : [],
-        attachments: Array.isArray(message.attachments)
-          ? message.attachments.map((item) => ({
-              type: item.type,
-              filename: item.filename,
-              base64: item.base64,
-              url: item.url,
-              mime_type: item.mime_type,
-            }))
-          : [],
-      }));
-  }, []);
+  const hydrateMessages = useCallback(
+    (messages: SessionMessage[]): MessageItem[] => {
+      return messages
+        .filter((message) => message.role !== "system")
+        .map((message) => {
+          const raw = normalizeMessageContent(message.content as unknown);
+          const attachments = hydrateMessageAttachments(message.attachments);
+          const requestSnapshot = hydrateRequestSnapshot(
+            message,
+            raw,
+            attachments,
+          );
+          return {
+            role: message.role,
+            content:
+              message.role === "assistant"
+                ? normalizeMarkdownForDisplay(raw)
+                : raw,
+            capability: message.capability || "",
+            events: Array.isArray(message.events) ? message.events : [],
+            attachments,
+            ...(requestSnapshot ? { requestSnapshot } : {}),
+          };
+        });
+    },
+    [],
+  );
 
   const moveRunner = useCallback((oldKey: string, newKey: string) => {
     if (oldKey === newKey) return;
@@ -535,7 +743,9 @@ export function UnifiedChatProvider({ children }: { children: React.ReactNode })
           event.session_id ||
           "";
         const turnId =
-          (event.metadata as { turn_id?: string } | undefined)?.turn_id || event.turn_id || null;
+          (event.metadata as { turn_id?: string } | undefined)?.turn_id ||
+          event.turn_id ||
+          null;
         if (sessionId) {
           dispatch({
             type: "BIND_SERVER_SESSION",
@@ -548,7 +758,10 @@ export function UnifiedChatProvider({ children }: { children: React.ReactNode })
         return;
       }
       if (event.type === "done") {
-        const status = String((event.metadata as { status?: string } | undefined)?.status || "completed");
+        const status = String(
+          (event.metadata as { status?: string } | undefined)?.status ||
+            "completed",
+        );
         dispatch({
           type: "STREAM_END",
           key: effectiveKey,
@@ -564,20 +777,35 @@ export function UnifiedChatProvider({ children }: { children: React.ReactNode })
       dispatch({ type: "STREAM_EVENT", key: effectiveKey, event });
       if (
         event.type === "error" &&
-        Boolean((event.metadata as { turn_terminal?: boolean } | undefined)?.turn_terminal)
+        Boolean(
+          (event.metadata as { turn_terminal?: boolean } | undefined)
+            ?.turn_terminal,
+        )
       ) {
-        const reason = String((event.metadata as { reason?: string } | undefined)?.reason || "");
+        const reason = String(
+          (event.metadata as { reason?: string } | undefined)?.reason || "",
+        );
         // Pre-flight regenerate rejections never mutate server state, so we
         // roll back the optimistic POP_LAST_ASSISTANT/STREAM_START placeholder
         // to keep the transcript in sync with the server.
-        if (reason === "regenerate_busy" || reason === "nothing_to_regenerate") {
+        if (
+          reason === "regenerate_busy" ||
+          reason === "nothing_to_regenerate"
+        ) {
           const stash = pendingRegenerateRef.current.get(effectiveKey);
           if (stash) {
-            dispatch({ type: "RESTORE_ASSISTANT", key: effectiveKey, message: stash });
+            dispatch({
+              type: "RESTORE_ASSISTANT",
+              key: effectiveKey,
+              message: stash,
+            });
           }
         }
         pendingRegenerateRef.current.delete(effectiveKey);
-        const status = String((event.metadata as { status?: string } | undefined)?.status || "failed");
+        const status = String(
+          (event.metadata as { status?: string } | undefined)?.status ||
+            "failed",
+        );
         dispatch({
           type: "STREAM_END",
           key: effectiveKey,
@@ -607,7 +835,11 @@ export function UnifiedChatProvider({ children }: { children: React.ReactNode })
           () => {
             const session = stateRef.current.sessions[record.key];
             if (session?.isStreaming) {
-              dispatch({ type: "STREAM_END", key: record.key, status: "failed" });
+              dispatch({
+                type: "STREAM_END",
+                key: record.key,
+                status: "failed",
+              });
             }
           },
         ),
@@ -643,20 +875,30 @@ export function UnifiedChatProvider({ children }: { children: React.ReactNode })
   const loadSession = useCallback(
     async (sessionId: string) => {
       const session = await getSession(sessionId);
-      const activeTurn = Array.isArray(session.active_turns) ? session.active_turns[0] : undefined;
+      const activeTurn = Array.isArray(session.active_turns)
+        ? session.active_turns[0]
+        : undefined;
       dispatch({
         type: "LOAD_SESSION",
         key: session.session_id || session.id,
         sessionId: session.session_id || session.id,
         messages: hydrateMessages(session.messages ?? []),
         activeTurnId: activeTurn?.turn_id || activeTurn?.id || null,
-        status: (session.status as SessionRuntimeStatus | undefined) || (activeTurn ? "running" : "idle"),
-        tools: Array.isArray(session.preferences?.tools) ? session.preferences.tools : [],
+        status:
+          (session.status as SessionRuntimeStatus | undefined) ||
+          (activeTurn ? "running" : "idle"),
+        tools: Array.isArray(session.preferences?.tools)
+          ? session.preferences.tools
+          : [],
         capability: session.preferences?.capability || null,
         knowledgeBases: Array.isArray(session.preferences?.knowledge_bases)
           ? session.preferences.knowledge_bases
           : [],
-        language: session.preferences?.language || "en",
+        llmSelection: asLLMSelection(session.preferences?.llm_selection),
+        // The Settings language is global UI state. Historical sessions may
+        // have stale persisted preferences, so new turns follow the current
+        // app language rather than the language saved when the session began.
+        language: readStoredLanguage(),
       });
       if (activeTurn?.turn_id || activeTurn?.id) {
         const key = session.session_id || session.id;
@@ -672,9 +914,33 @@ export function UnifiedChatProvider({ children }: { children: React.ReactNode })
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const current = state.selectedKey ? state.sessions[state.selectedKey] : null;
+    const current = state.selectedKey
+      ? state.sessions[state.selectedKey]
+      : null;
     writeStoredActiveSessionId(current?.sessionId ?? null);
   }, [state.selectedKey, state.sessions]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const syncLanguage = (language: string | null | undefined) => {
+      dispatch({ type: "SET_LANGUAGE", lang: normalizeLanguage(language) });
+    };
+    const onLanguage = (event: Event) => {
+      const detail = (event as CustomEvent<{ language?: string }>).detail;
+      syncLanguage(detail?.language);
+    };
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === LANGUAGE_STORAGE_KEY) syncLanguage(event.newValue);
+    };
+
+    window.addEventListener(LANGUAGE_EVENT, onLanguage);
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener(LANGUAGE_EVENT, onLanguage);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, []);
 
   // URL is now the source of truth for session loading.
   // Chat pages load sessions based on URL params; no sessionStorage restore needed.
@@ -704,7 +970,8 @@ export function UnifiedChatProvider({ children }: { children: React.ReactNode })
             type: "error",
             source: "client",
             stage: "",
-            content: "Connection timed out — no response received for 60 seconds.",
+            content:
+              "Connection timed out — no response received for 60 seconds.",
             metadata: { turn_terminal: true, status: "failed" },
             timestamp: Date.now() / 1000,
           },
@@ -732,6 +999,7 @@ export function UnifiedChatProvider({ children }: { children: React.ReactNode })
       options?: SendMessageOptions,
       questionNotebookReferences?: QuestionNotebookReferencePayload,
       skills?: string[],
+      memoryReferences?: MemoryReferencePayload,
     ) => {
       const msgAttachments = attachments?.map((a) => ({
         type: a.type,
@@ -748,31 +1016,59 @@ export function UnifiedChatProvider({ children }: { children: React.ReactNode })
       }
       const session = currentState.sessions[key] ?? createSessionEntry(key);
       const replaySnapshot = options?.requestSnapshotOverride;
-      const effectiveCapability = replaySnapshot?.capability ?? session.activeCapability;
-      const effectiveTools = replaySnapshot?.enabledTools ?? session.enabledTools;
-      const effectiveKnowledgeBases = replaySnapshot?.knowledgeBases ?? session.knowledgeBases;
-      const effectiveLanguage = replaySnapshot?.language ?? session.language;
+      const effectiveCapability =
+        replaySnapshot?.capability ?? session.activeCapability;
+      const effectiveTools =
+        replaySnapshot?.enabledTools ?? session.enabledTools;
+      const effectiveKnowledgeBases =
+        replaySnapshot?.knowledgeBases ?? session.knowledgeBases;
+      const effectiveLLMSelection =
+        replaySnapshot && "llmSelection" in replaySnapshot
+          ? (replaySnapshot.llmSelection ?? null)
+          : session.llmSelection;
+      const effectiveLanguage =
+        replaySnapshot?.language ?? readStoredLanguage();
       const researchSources = Array.isArray(config?.sources)
-        ? config.sources.filter((value): value is string => typeof value === "string")
+        ? config.sources.filter(
+            (value): value is string => typeof value === "string",
+          )
         : [];
       const shouldSendKnowledgeBases =
         effectiveTools.includes("rag") ||
-        (effectiveCapability === "deep_research" && researchSources.includes("kb"));
+        (effectiveCapability === "deep_research" &&
+          researchSources.includes("kb"));
       const effectiveSkills = replaySnapshot?.skills ?? skills;
+      const effectiveMemoryReferences =
+        replaySnapshot?.memoryReferences ?? memoryReferences;
+      const effectiveBookReferences =
+        replaySnapshot?.bookReferences ?? options?.bookReferences;
       const requestSnapshot: MessageRequestSnapshot = replaySnapshot ?? {
         content,
         capability: effectiveCapability,
         enabledTools: [...effectiveTools],
-        knowledgeBases: shouldSendKnowledgeBases ? [...effectiveKnowledgeBases] : [],
+        knowledgeBases: shouldSendKnowledgeBases
+          ? [...effectiveKnowledgeBases]
+          : [],
         language: effectiveLanguage,
         ...(msgAttachments?.length ? { attachments: msgAttachments } : {}),
         ...(config && Object.keys(config).length > 0 ? { config } : {}),
         ...(notebookReferences?.length ? { notebookReferences } : {}),
-        ...(historyReferences?.length ? { historyReferences: [...historyReferences] } : {}),
+        ...(historyReferences?.length
+          ? { historyReferences: [...historyReferences] }
+          : {}),
         ...(questionNotebookReferences?.length
           ? { questionNotebookReferences: [...questionNotebookReferences] }
           : {}),
+        ...(effectiveBookReferences?.length
+          ? { bookReferences: effectiveBookReferences }
+          : {}),
         ...(effectiveSkills?.length ? { skills: [...effectiveSkills] } : {}),
+        ...(effectiveMemoryReferences?.length
+          ? { memoryReferences: [...effectiveMemoryReferences] }
+          : {}),
+        ...(effectiveLLMSelection
+          ? { llmSelection: effectiveLLMSelection }
+          : {}),
       };
       if (options?.displayUserMessage !== false) {
         dispatch({
@@ -794,7 +1090,9 @@ export function UnifiedChatProvider({ children }: { children: React.ReactNode })
         content,
         tools: effectiveTools,
         capability: effectiveCapability,
-        knowledge_bases: shouldSendKnowledgeBases ? effectiveKnowledgeBases : [],
+        knowledge_bases: shouldSendKnowledgeBases
+          ? effectiveKnowledgeBases
+          : [],
         session_id: session.sessionId,
         attachments,
         language: effectiveLanguage,
@@ -807,7 +1105,16 @@ export function UnifiedChatProvider({ children }: { children: React.ReactNode })
         ...(questionNotebookReferences?.length
           ? { question_notebook_references: questionNotebookReferences }
           : {}),
+        ...(effectiveBookReferences?.length
+          ? { book_references: effectiveBookReferences }
+          : {}),
         ...(effectiveSkills?.length ? { skills: effectiveSkills } : {}),
+        ...(effectiveMemoryReferences?.length
+          ? { memory_references: effectiveMemoryReferences }
+          : {}),
+        ...(effectiveLLMSelection
+          ? { llm_selection: effectiveLLMSelection }
+          : {}),
         ...(effectiveConfig && Object.keys(effectiveConfig).length > 0
           ? { config: effectiveConfig }
           : {}),
@@ -839,7 +1146,9 @@ export function UnifiedChatProvider({ children }: { children: React.ReactNode })
     const session = currentState.sessions[key];
     if (!session || !session.sessionId) return;
     if (session.isStreaming) return;
-    const lastUser = [...session.messages].reverse().find((m) => m.role === "user");
+    const lastUser = [...session.messages]
+      .reverse()
+      .find((m) => m.role === "user");
     if (!lastUser) return;
     // Snapshot the trailing assistant (if any) so we can put it back when the
     // server rejects the request. We intentionally keep events/attachments so
@@ -855,6 +1164,9 @@ export function UnifiedChatProvider({ children }: { children: React.ReactNode })
     sendThroughRunner(key, {
       type: "regenerate",
       session_id: session.sessionId,
+      overrides: {
+        language: readStoredLanguage(),
+      },
     });
   }, [sendThroughRunner]);
 
@@ -865,6 +1177,7 @@ export function UnifiedChatProvider({ children }: { children: React.ReactNode })
       enabledTools: current.enabledTools,
       activeCapability: current.activeCapability,
       knowledgeBases: current.knowledgeBases,
+      llmSelection: current.llmSelection,
       messages: current.messages,
       isStreaming: current.isStreaming,
       currentStage: current.currentStage,
@@ -898,6 +1211,10 @@ export function UnifiedChatProvider({ children }: { children: React.ReactNode })
     dispatch({ type: "SET_KB", kbs });
   }, []);
 
+  const setLLMSelection = useCallback((selection: LLMSelection | null) => {
+    dispatch({ type: "SET_LLM_SELECTION", selection });
+  }, []);
+
   const setLanguage = useCallback((lang: string) => {
     dispatch({ type: "SET_LANGUAGE", lang });
   }, []);
@@ -911,6 +1228,7 @@ export function UnifiedChatProvider({ children }: { children: React.ReactNode })
     setTools,
     setCapability,
     setKBs,
+    setLLMSelection,
     setLanguage,
     sendMessage,
     cancelStreamingTurn,
@@ -927,6 +1245,7 @@ export function UnifiedChatProvider({ children }: { children: React.ReactNode })
 
 export function useUnifiedChat() {
   const ctx = useContext(ChatCtx);
-  if (!ctx) throw new Error("useUnifiedChat must be inside UnifiedChatProvider");
+  if (!ctx)
+    throw new Error("useUnifiedChat must be inside UnifiedChatProvider");
   return ctx;
 }
